@@ -47,16 +47,6 @@ function log(message: string): void {
     // console.log(`${CONFIG.logPrefix} ${message}`);
 }
 
-function getTwoNumbersFromString(inputValue: string): [string | null, string | null] {
-    const parts = inputValue.split('-');
-    if (parts.length === 2) {
-        const num1 = parts[0];
-        const num2 = parts[1];
-        return [isNaN(Number(num1)) ? null : num1, isNaN(Number(num2)) ? null : num2];
-    }
-    return [null, null];
-}
-
 
 /**
  * Gets all novels from the select element and sends them to the main process
@@ -279,62 +269,14 @@ function checkAccountPage(): void {
 }
 
 
-//  insert values into the inputs
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function insertValues(chapter: ChapterData) {
-    const [cat, series] = getTwoNumbersFromString(chapter.novel);
-    const volumeSelect = document.querySelector<HTMLSelectElement>("#volume");
-    const chapterNumberInput = document.querySelector<HTMLInputElement>("#ero_chapter");
-    const chapterTitleInput = document.querySelector<HTMLInputElement>("#title");
-    const chapterContentInput = document.querySelector<HTMLTextAreaElement>("#description");
-    const chpaterOtherWebsiteCheckbox = document.querySelector<HTMLInputElement>("#post_other");
-    const seriresSelect = document.querySelector<HTMLSelectElement>("#category");
-    const catSelect = document.querySelector<HTMLSelectElement>("#cat");
-
-    if (volumeSelect && chapterNumberInput && chapterTitleInput && chapterContentInput && chpaterOtherWebsiteCheckbox && seriresSelect && catSelect) {
-        chpaterOtherWebsiteCheckbox.checked = chapter.postOnOtherWebsite;
-        chapterContentInput.value = chapter.content;
-        volumeSelect.value = chapter.volume;
-        chapterNumberInput.value = chapter.chapterNumber;
-        chapterTitleInput.value = chapter.chapterTitle;
-        seriresSelect.value = series ?? cat ?? "";
-        catSelect.value = cat ?? "";
-    } else {
-        log("Could not find all elements to insert values");
-    }
-}
-
-function updateSearchParams(params: Record<string, string | null>) {
-    const currentUrl = new URL(window.location.href);
-    for (const key in params) {
-        currentUrl.searchParams.set(key, params[key] ?? '');
-    }
-    const newUrl = currentUrl.toString();
-    history.pushState(null, '', newUrl);
-    // Optionally, you can trigger a custom event to notify other parts of your app
-    // that the URL has changed.
-    window.dispatchEvent(new CustomEvent('url-changed', { detail: newUrl }));
-}
 
 
-
-interface ChapterData {
-    id: string;
-    novel: string;
-    volume: string;
-    content: string;
-    chapterNumber: string;
-    chapterTitle: string;
-    postOnOtherWebsite: boolean;
-}
 
 /**
  * Initializes the application
  */
 function init(): void {
     log('Script loaded.');
-    const urlParams = new URLSearchParams(window.location.search);
-    const processed = urlParams.get("item-processed");
 
     window.addEventListener('DOMContentLoaded', () => {
         log('DOM Content Loaded. Checking current page.');
@@ -355,27 +297,6 @@ function init(): void {
         fetchVolumes(value);
     });
 
-    ipcRenderer.on("process-data-request", (_, file: ChapterData) => {
-        insertValues(file).then(() => {
-            document.querySelector<HTMLButtonElement>("#submit")?.click();
-            ipcRenderer.send('data-processed-response', { status: 'success', id: file.id });
-        });
-        log(file.chapterTitle)
-        // submitChapter(file);
-    })
-
-    if (processed && processed !== "") {
-        const id = urlParams.get("item-processed");
-        ipcRenderer.send(`response-from-tab-${id}`, { status: 'success', id });
-        return
-    }
-    ipcRenderer.on('process-item', (_, itemData) => {
-        insertValues(itemData).then(() => {
-            updateSearchParams({ "item-processed": itemData.id, "success": "true" });
-            document.querySelector<HTMLButtonElement>("#submit")?.click();
-            // ipcRenderer.send(`response-from-tab-${itemData.id}`, { status: 'success', id: itemData.id });
-        });
-    });
 }
 
 // Initialize the application

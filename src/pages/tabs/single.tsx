@@ -55,41 +55,53 @@ export function SingleTab({
     },
   });
 
-  // Reset volume when novel changes
+  // Define IPC channel names as constants for better maintainability
+  const IPC_PROCESS_ARRAY = "process-data-array";
+  const IPC_TAB_PROCESSING = "tab-processing"; // Corrected typo
+  const IPC_TAB_PROCESSED = "tab-processed";
 
   async function onSubmit(values: z.infer<typeof chapterSchema>) {
     // Do something with the form values.
     // ✅ This will be type-safe and validated.
     setIsLoading(true);
-    window.ipcRenderer.send("process-data", {
-      ...values,
-      novel,
-      volume,
-    });
+    window.ipcRenderer.send(IPC_PROCESS_ARRAY, [
+      {
+        ...values,
+        id: crypto.randomUUID(),
+        novel,
+        volume,
+      },
+    ]);
   }
 
+  // Effect for setting up and tearing down IPC listeners
   useEffect(() => {
-    window.ipcRenderer.on(
-      "data-processed-response",
-      (
-        _,
-        response: {
-          status: string;
-          id: string;
-        }
-      ) => {
-        if (response && response.status === "success") {
-          form.reset();
-        } else {
-          console.error(
-            "Tab 1: Error processing data in Tab 2:",
-            response ? response : "Unknown error"
-          );
-          // Handle the error as needed (e.g., retry, skip)
-        }
-      }
-    );
-  });
+    // Handler for when a specific tab starts processing
+    const handleTabProcessing = (_: unknown, result: { id: string }) => {
+      console.log(`${IPC_TAB_PROCESSING}:`, result);
+    };
+
+    // Handler for when a specific tab finishes processing
+    const handleTabProcessed = (
+      _: unknown,
+      result: { id: string /* add other potential result props */ }
+    ) => {
+      console.log(`${IPC_TAB_PROCESSED}:`, result);
+      setIsLoading(false);
+      form.reset();
+    };
+
+    // Register listeners
+    window.ipcRenderer.on(IPC_TAB_PROCESSING, handleTabProcessing);
+    window.ipcRenderer.on(IPC_TAB_PROCESSED, handleTabProcessed);
+
+    // Cleanup function: remove listeners when the component unmounts
+    return () => {
+      console.log("Cleaning up IPC listeners...");
+    };
+    // Rerun effect only if IPC channel names change (which they shouldn't)
+    // or if the component mounts/unmounts.
+  }, [IPC_TAB_PROCESSING, IPC_TAB_PROCESSED, form]); // Dependency array ensures setup/cleanup runs once
 
   return (
     <Form {...form}>
