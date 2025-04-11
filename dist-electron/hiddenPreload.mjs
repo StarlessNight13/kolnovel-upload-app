@@ -1,1 +1,140 @@
-"use strict";const p=require("electron"),i={selectors:{postForm:"#new_post",accountNav:".pms-account-navigation",novelsSelect:"#cat"},urlKeywords:{post:"post",account:"account"},logPrefix:"[Hidden Preload]"};function d(t,o){p.ipcRenderer.send(t,o)}function e(t){d("console-log",`${i.logPrefix} ${t}`)}function v(){if(!document.querySelector(i.selectors.novelsSelect)){e("Novel select element not found");return}const o=w("cat","category");d("novels-data-hidden",o),e("Novels fetched:"+o.length)}async function h(t){e("Fetching volumes");try{const l=await(await fetch("https://kolnovel.com/wp-admin/admin-ajax.php",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({action:"volume_search",cat:t})})).text(),a=document.createElement("div");a.innerHTML=l;const n=Array.from(a.querySelectorAll("option")).slice(1).map(u=>({value:u.value,label:u.textContent||""}));d("novels-volumes-hidden",n),e(`Volumes fetched: ${n.length}`)}catch(o){e(`Error fetching volumes: ${o}`)}}function w(t,o){var m,g;const l=document.getElementById(t),a=document.getElementById(o);if(!l||!a)return console.error("One or both select elements not found."),[];const n=new Map;for(let c=0;c<l.options.length;c++){const r=l.options[c],s=(m=r.textContent)==null?void 0:m.toLowerCase();s&&!n.has(s)&&n.set(s,{values:new Set,text:r.textContent??"unknown"}),n.get(s).values.add(r.value)}const u=[];for(let c=0;c<a.options.length;c++){const r=a.options[c],s=(g=r.textContent)==null?void 0:g.toLowerCase();if(s&&n.has(s)){const f=n.get(s);f.values.add(r.value),u.push({value:Array.from(f.values).sort().join("-"),text:f.text}),n.delete(s)}}return u.sort((c,r)=>c.text.localeCompare(r.text)),u}function y(){return window.location.href.includes(i.urlKeywords.post)}function x(){return window.location.href.includes(i.urlKeywords.account)}function S(){e(`Checking for post form: ${i.selectors.postForm}`),document.querySelector(i.selectors.postForm)?(e("Post form found."),d("loged-in"),v()):(e("Post form not found. Sending 'form-missing' notification."),d("form-missing",i.selectors.postForm))}function C(){e("Checking for account navigation."),document.querySelector(i.selectors.accountNav)?(e("Account navigation found. Sending 'login-success' notification."),d("login-success")):e("Account navigation not found.")}function P(){var t;e("Script loaded."),window.addEventListener("DOMContentLoaded",()=>{e("DOM Content Loaded. Checking current page."),y()?S():x()?C():e("Current URL does not match any specific check.")}),(t=document.querySelector("#description-html"))==null||t.click(),p.ipcRenderer.on("novel-selected",(o,l)=>{e("novel-selected"),h(l)})}P();console.log("[Hidden Preload] Loaded.");
+"use strict";
+const electron = require("electron");
+const CONFIG = {
+  selectors: {
+    postForm: "#new_post",
+    // MUST MATCH main.js
+    accountNav: ".pms-account-navigation",
+    novelsSelect: "#cat"
+  },
+  urlKeywords: {
+    post: "post",
+    account: "account"
+  },
+  logPrefix: "[Hidden Preload]"
+};
+function sendMessage(key, payload) {
+  electron.ipcRenderer.send(key, payload);
+}
+function log(message) {
+  sendMessage("console-log", `${CONFIG.logPrefix} ${message}`);
+}
+function getAndSendNovels() {
+  const novelsSelect = document.querySelector(CONFIG.selectors.novelsSelect);
+  if (!novelsSelect) {
+    log("Novel select element not found");
+    return;
+  }
+  const novels = findAndSortMatchingOptionsFormattedTS("cat", "category");
+  sendMessage("novels-data-hidden", novels);
+  log("Novels fetched:" + novels.length);
+}
+async function fetchVolumes(novel) {
+  log("Fetching volumes");
+  try {
+    const res = await fetch("https://kolnovel.com/wp-admin/admin-ajax.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        action: "volume_search",
+        cat: novel
+      })
+    });
+    const text = await res.text();
+    const tempDiv = document.createElement("div");
+    tempDiv.innerHTML = text;
+    const volumesList = Array.from(tempDiv.querySelectorAll("option")).slice(1).map((option) => ({
+      value: option.value,
+      label: option.textContent || ""
+    }));
+    sendMessage("novels-volumes-hidden", volumesList);
+    log(`Volumes fetched: ${volumesList.length}`);
+  } catch (error) {
+    log(`Error fetching volumes: ${error}`);
+  }
+}
+function findAndSortMatchingOptionsFormattedTS(selectElementId1, selectElementId2) {
+  var _a, _b;
+  const select1 = document.getElementById(selectElementId1);
+  const select2 = document.getElementById(selectElementId2);
+  if (!select1 || !select2) {
+    console.error("One or both select elements not found.");
+    return [];
+  }
+  const matchingOptionsMap = /* @__PURE__ */ new Map();
+  for (let i = 0; i < select1.options.length; i++) {
+    const option1 = select1.options[i];
+    const text1Lower = (_a = option1.textContent) == null ? void 0 : _a.toLowerCase();
+    if (text1Lower && !matchingOptionsMap.has(text1Lower)) {
+      matchingOptionsMap.set(text1Lower, { values: /* @__PURE__ */ new Set(), text: option1.textContent ?? "unknown" });
+    }
+    matchingOptionsMap.get(text1Lower).values.add(option1.value);
+  }
+  const finalMatchingOptions = [];
+  for (let i = 0; i < select2.options.length; i++) {
+    const option2 = select2.options[i];
+    const text2Lower = (_b = option2.textContent) == null ? void 0 : _b.toLowerCase();
+    if (text2Lower && matchingOptionsMap.has(text2Lower)) {
+      const existingEntry = matchingOptionsMap.get(text2Lower);
+      existingEntry.values.add(option2.value);
+      finalMatchingOptions.push({
+        value: Array.from(existingEntry.values).sort().join("-"),
+        text: existingEntry.text
+      });
+      matchingOptionsMap.delete(text2Lower);
+    }
+  }
+  finalMatchingOptions.sort((a, b) => a.text.localeCompare(b.text));
+  return finalMatchingOptions;
+}
+function isPostPage() {
+  return window.location.href.includes(CONFIG.urlKeywords.post);
+}
+function isAccountPage() {
+  return window.location.href.includes(CONFIG.urlKeywords.account);
+}
+function checkPostPage() {
+  log(`Checking for post form: ${CONFIG.selectors.postForm}`);
+  const formElement = document.querySelector(CONFIG.selectors.postForm);
+  if (!formElement) {
+    log(`Post form not found. Sending 'form-missing' notification.`);
+    sendMessage("form-missing", CONFIG.selectors.postForm);
+  } else {
+    log(`Post form found.`);
+    sendMessage("loged-in");
+    getAndSendNovels();
+  }
+}
+function checkAccountPage() {
+  log(`Checking for account navigation.`);
+  const accountNavElement = document.querySelector(CONFIG.selectors.accountNav);
+  if (accountNavElement) {
+    log(`Account navigation found. Sending 'login-success' notification.`);
+    sendMessage("login-success");
+  } else {
+    log(`Account navigation not found.`);
+  }
+}
+function init() {
+  var _a;
+  log("Script loaded.");
+  window.addEventListener("DOMContentLoaded", () => {
+    log("DOM Content Loaded. Checking current page.");
+    if (isPostPage()) {
+      checkPostPage();
+    } else if (isAccountPage()) {
+      checkAccountPage();
+    } else {
+      log("Current URL does not match any specific check.");
+    }
+  });
+  (_a = document.querySelector("#description-html")) == null ? void 0 : _a.click();
+  electron.ipcRenderer.on("novel-selected", (_, value) => {
+    log("novel-selected");
+    fetchVolumes(value);
+  });
+}
+init();
+console.log(`[Hidden Preload] Loaded.`);

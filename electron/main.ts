@@ -253,12 +253,14 @@ ipcMain.handle('read-and-convert-file', async (_, filePath) => {
                   break;
                 }
                 case '.docx': {
+                  fileContent = zip.readFile(entry.entryName);
                   if (fileContent instanceof Buffer) {
+                    console.log("is buffer")
                     const result = await mammoth.convertToHtml({ buffer: fileContent });
                     htmlContent = result.value;
                     filesArray.push({ name: entry.name, type: 'docx', content: htmlContent });
                   } else {
-                    console.error(`Error reading ${entry.entryName} from zip as Buffer.`);
+                    console.log("is not buffer")
                   }
                   break;
                 }

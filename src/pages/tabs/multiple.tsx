@@ -144,14 +144,25 @@ export function MultipleTab({ novel, volume }: MultipleTabProps) {
     const fileContent = (await window.ipcRenderer.invoke(
       "read-and-convert-file",
       filePath
-    )) as FileData;
-
-    addNewChapter({
-      content: fileContent.content,
-      chapterTitle: fileContent.name,
-      chapterNumber: "1",
-      postOnOtherWebsite: true,
-    });
+    )) as FileData | FileData[];
+    if (Array.isArray(fileContent)) {
+      console.log("Array of files");
+      for (const file of fileContent) {
+        addNewChapter({
+          content: file.content,
+          chapterTitle: file.name,
+          chapterNumber: "1",
+          postOnOtherWebsite: true,
+        });
+      }
+    } else {
+      addNewChapter({
+        content: fileContent.content,
+        chapterTitle: fileContent.name,
+        chapterNumber: "1",
+        postOnOtherWebsite: true,
+      });
+    }
   };
 
   const addNewChapter = (chapterData?: Partial<Omit<ChapterData, "id">>) => {
