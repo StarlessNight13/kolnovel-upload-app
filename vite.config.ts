@@ -21,7 +21,13 @@ export default defineConfig({
         vite: {
           build: {
             rollupOptions: {
-              input: path.join(__dirname, 'electron/hiddenPreload.ts'),
+              input: [
+                path.join(__dirname, 'electron/hiddenPreload.ts'),
+                path.join(__dirname, 'electron/postPreload.ts'),
+              ],
+              output: {
+                inlineDynamicImports: false
+              }
             }
           }
         }

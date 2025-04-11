@@ -1,5 +1,4 @@
-import { Plus } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import Editor from "@/components/Tiptap";
 import { Button } from "@/components/ui/button";
@@ -11,159 +10,96 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-interface Novel {
-  value: string;
-  label: string;
-}
-
-interface Volume {
-  value: string;
-  label: string;
-}
-
 const chapterSchema = z.object({
-  novel: z.string().min(1, {
-    message: "Novel is required",
-  }),
-  volume: z.string().min(1, {
-    message: "Volume is required",
-  }),
   chapterNumber: z.string().min(1, {
     message: "Chapter number is required",
   }),
   chapterTitle: z.string().min(1, {
     message: "Chapter title is required",
   }),
-  chapterContent: z.string().min(1, {
+  content: z.string().min(1, {
     message: "Chapter content is required",
   }),
   postOnOtherWebsite: z.boolean(),
 });
 
 export function SingleTab({
-  novels,
-  novelSelected,
-  volumes,
+  novel,
+  volume,
 }: {
-  novels: Novel[];
-  volumes: Volume[];
-  novelSelected: (value: string) => void;
+  novel: string;
+  volume: string;
 }) {
+  const [isLoading, setIsLoading] = useState(false);
+
   const form = useForm<z.infer<typeof chapterSchema>>({
     resolver: zodResolver(chapterSchema),
+    defaultValues: {
+      chapterNumber: "1",
+      postOnOtherWebsite: true,
+      content: "",
+      chapterTitle: "",
+    },
   });
 
   // Reset volume when novel changes
-  useEffect(() => {
-    const subscription = form.watch((value, { name }) => {
-      if (name === 'novel') {
-        form.setValue('volume', '');
-      }
-    });
 
-    return () => subscription.unsubscribe();
-  }, [form]);
-
-  function onSubmit(values: z.infer<typeof chapterSchema>) {
+  async function onSubmit(values: z.infer<typeof chapterSchema>) {
     // Do something with the form values.
     // ✅ This will be type-safe and validated.
-    console.log(values);
+    setIsLoading(true);
+    window.ipcRenderer.send("process-data", {
+      ...values,
+      novel,
+      volume,
+    });
   }
 
+  useEffect(() => {
+    window.ipcRenderer.on(
+      "data-processed-response",
+      (
+        _,
+        response: {
+          status: string;
+          id: string;
+        }
+      ) => {
+        if (response && response.status === "success") {
+          form.reset();
+        } else {
+          console.error(
+            "Tab 1: Error processing data in Tab 2:",
+            response ? response : "Unknown error"
+          );
+          // Handle the error as needed (e.g., retry, skip)
+        }
+      }
+    );
+  });
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-1 ">
         <Card className="p-6 flex-1 flex-col flex">
+          <CardHeader>
+            {/* <CardTitle>Chapter Content</CardTitle> */}
+            {isLoading && <span className="text-xs">Sending Chapter...</span>}
+          </CardHeader>
           <CardContent className="flex flex-col flex-1 gap-5">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <FormField
-                control={form.control}
-                name="novel"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Novel Selection</FormLabel>
-                    <Select
-                      value={field.value}
-                      onValueChange={(value) => {
-                        novelSelected(value);
-                        field.onChange(value);
-                      }}
-                      disabled={novels.length === 0}
-                    >
-                      <FormControl>
-                        <SelectTrigger id="novel" className="w-full">
-                          <SelectValue placeholder="Select a novel" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {novels.map((novel) => (
-                          <SelectItem key={novel.value} value={novel.value}>
-                            {novel.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      Select the novel for this chapter.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="volume"
-                render={({ field }) => (
-                  <FormItem>
-                    <div className="flex items-center justify-between">
-                      <FormLabel>Volume Selection</FormLabel>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                      >
-                        <Plus className="h-4 w-4 mr-1" /> New Volume
-                      </Button>
-                    </div>
-                    <Select
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      disabled={volumes.length === 0}
-                    >
-                      <FormControl>
-                        <SelectTrigger id="volume" className="w-full">
-                          <SelectValue placeholder="Select a volume" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {volumes.map((volume) => (
-                          <SelectItem key={volume.value} value={volume.value}>
-                            {volume.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <FormField
                 control={form.control}
@@ -172,11 +108,7 @@ export function SingleTab({
                   <FormItem>
                     <FormLabel>Chapter Number</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
-                        placeholder="e.g., 1"
-                        {...field}
-                      />
+                      <Input type="number" placeholder="e.g., 1" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -190,10 +122,7 @@ export function SingleTab({
                   <FormItem>
                     <FormLabel>Chapter Title</FormLabel>
                     <FormControl>
-                      <Input
-                        placeholder="Enter chapter title"
-                        {...field}
-                      />
+                      <Input placeholder="Enter chapter title" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -208,7 +137,7 @@ export function SingleTab({
               <CardContent className="flex flex-col flex-1">
                 <FormField
                   control={form.control}
-                  name="chapterContent"
+                  name="content"
                   render={({ field }) => (
                     <FormItem className="flex-1">
                       <FormControl>
@@ -236,9 +165,7 @@ export function SingleTab({
                     />
                   </FormControl>
                   <div className="space-y-1 leading-none">
-                    <FormLabel>
-                      Post on the other website
-                    </FormLabel>
+                    <FormLabel>Post on the other website</FormLabel>
                   </div>
                 </FormItem>
               )}

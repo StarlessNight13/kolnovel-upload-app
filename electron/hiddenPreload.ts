@@ -1,9 +1,9 @@
-import { ipcRenderer } from 'electron';
+import { ipcRenderer } from "electron";
 
 // --- Types and Configuration ---
 interface Novel {
     value: string;
-    label: string;
+    text: string;
 }
 
 interface Config {
@@ -33,144 +33,352 @@ const CONFIG: Config = {
 };
 
 /**
- * Communication handler for sending messages to the main process
+ * Sends a message to the main process
  */
-class CommunicationService {
-    static sendMessage(key: string, payload?: unknown): void {
-        ipcRenderer.send(JSON.stringify({ key, payload }));
-    }
-
-    static log(message: string): void {
-        this.sendMessage('console-log', `${CONFIG.logPrefix} ${message}`);
-    }
+function sendMessage(key: string, payload?: unknown): void {
+    ipcRenderer.send(key, payload);
 }
 
 /**
- * Novel data handler
+ * Logs a message through IPC
  */
-class NovelService {
-    static getAndSendNovels(): void {
-        const novelsSelect = document.querySelector<HTMLSelectElement>(CONFIG.selectors.novelsSelect);
-        if (!novelsSelect) {
-            CommunicationService.log('Novel select element not found');
-            return;
-        }
+function log(message: string): void {
+    sendMessage('console-log', `${CONFIG.logPrefix} ${message}`);
+    // console.log(`${CONFIG.logPrefix} ${message}`);
+}
 
-        const novels: Novel[] = Array.from(novelsSelect.options)
+function getTwoNumbersFromString(inputValue: string): [string | null, string | null] {
+    const parts = inputValue.split('-');
+    if (parts.length === 2) {
+        const num1 = parts[0];
+        const num2 = parts[1];
+        return [isNaN(Number(num1)) ? null : num1, isNaN(Number(num2)) ? null : num2];
+    }
+    return [null, null];
+}
+
+
+/**
+ * Gets all novels from the select element and sends them to the main process
+ */
+function getAndSendNovels(): void {
+    const novelsSelect = document.querySelector<HTMLSelectElement>(CONFIG.selectors.novelsSelect);
+    if (!novelsSelect) {
+        log('Novel select element not found');
+        return;
+    }
+
+    const novels: Novel[] = findAndSortMatchingOptionsFormattedTS("cat", "category");
+
+
+    sendMessage("novels-data-hidden", novels);
+    log("Novels fetched:" + novels.length);
+}
+
+/**
+ * Fetches volumes for a given novel
+ */
+async function fetchVolumes(novel: string): Promise<void> {
+    log("Fetching volumes");
+
+    try {
+        const res = await fetch("https://kolnovel.com/wp-admin/admin-ajax.php", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({
+                action: "volume_search",
+                cat: novel,
+            }),
+        });
+
+        const text = await res.text();
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = text;
+
+        const volumesList: {
+            value: string;
+            label: string;
+        }[] = Array.from(tempDiv.querySelectorAll("option"))
             .slice(1)
             .map(option => ({
-                value: option.value,
-                label: option.text,
+                value: (option as HTMLOptionElement).value,
+                label: option.textContent || '',
             }));
 
-        CommunicationService.sendMessage("novels-data-hidden", novels);
-        CommunicationService.log("Novels fetched:" + novels.length);
+        sendMessage("novels-volumes-hidden", volumesList);
+        log(`Volumes fetched: ${volumesList.length}`);
+    } catch (error) {
+        log(`Error fetching volumes: ${error}`);
+    }
+}
+
+
+
+// function getCurrentDateTimeFormatted() {
+//     const now = new Date();
+
+//     // Get year, month, and day
+//     const year = now.getFullYear();
+//     const month = String(now.getMonth() + 1).padStart(2, '0'); // Month is 0-indexed, pad with leading zero
+//     const day = String(now.getDate()).padStart(2, '0');
+
+//     // Get hours and minutes (24-hour format)
+//     const hours = String(now.getHours()).padStart(2, '0');
+//     const minutes = String(now.getMinutes()).padStart(2, '0');
+
+//     const formattedDate = `${year}-${month}-${day}`;
+
+//     return {
+//         date: formattedDate,
+//         hours,
+//         minutes,
+//     };
+// }
+
+
+
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// async function submitChapter(chapterData: ChapterData) {
+//     const { date, hours, minutes } = getCurrentDateTimeFormatted();
+//     const [cat, series] = getTwoNumbersFromString(chapterData.novel);
+//     log("Submitting chapter");
+
+//     const formData = new URLSearchParams();
+//     formData.append('ts_post_push_cb', '669f39cae3024d1424c16d42d982c93f');
+//     formData.append('UTZ', 'GMT+2');
+//     formData.append('myCRED_sell_content', '0');
+//     formData.append('post_other', 'on');
+//     formData.append('checkbox_value', 'yes');
+//     formData.append('schedule_value', 'no');
+//     formData.append('submit', 'نشر');
+//     formData.append('title', chapterData.chapterTitle);
+//     formData.append('description', chapterData.content);
+//     formData.append('post_other', chapterData.postOnOtherWebsite ? 'on' : 'off');
+//     formData.append('ero_chapter', chapterData.chapterNumber);
+//     formData.append('ero_volume1', chapterData.volume);
+//     formData.append('cat', cat ?? '');
+//     formData.append('ero_series', series ?? '');
+//     // date
+//     formData.append('gold_date', date);
+//     formData.append('date_now', date);
+//     formData.append('schedule_date', date);
+//     // hours 
+//     formData.append('schedule_time_hh', hours);
+//     formData.append('hhg', hours);
+//     formData.append('hh', hours);
+//     // minutes
+//     formData.append('schedule_time_mn', minutes);
+//     formData.append('mng', minutes);
+//     formData.append('mn', minutes);
+
+
+
+//     const res = await fetch("/post/", {
+//         method: 'POST',
+//         body: formData.toString(),
+//     })
+//     // ipcRenderer.send('data-processed-response', { status: res.ok && 'success', result: chapterData.id });
+//     return res
+// }
+
+function findAndSortMatchingOptionsFormattedTS(
+    selectElementId1: string,
+    selectElementId2: string
+): { value: string; text: string }[] {
+    const select1 = document.getElementById(selectElementId1) as HTMLSelectElement | null;
+    const select2 = document.getElementById(selectElementId2) as HTMLSelectElement | null;
+
+    if (!select1 || !select2) {
+        console.error("One or both select elements not found.");
+        return [];
     }
 
-    static async fetchVolumes(novel: string): Promise<void> {
-        CommunicationService.log("Fetching volumes");
+    const matchingOptionsMap = new Map<string, { values: Set<string>; text: string }>();
 
-        try {
-            const res = await fetch("https://kolnovel.com/wp-admin/admin-ajax.php", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
-                body: new URLSearchParams({
-                    action: "volume_search",
-                    cat: novel,
-                }),
+    for (let i = 0; i < select1.options.length; i++) {
+        const option1 = select1.options[i];
+        const text1Lower = option1.textContent?.toLowerCase();
+        if (text1Lower && !matchingOptionsMap.has(text1Lower)) {
+            matchingOptionsMap.set(text1Lower, { values: new Set<string>(), text: option1.textContent ?? "unknown" });
+        }
+        matchingOptionsMap.get(text1Lower!)!.values.add(option1.value);
+    }
+
+    const finalMatchingOptions: { value: string; text: string }[] = [];
+
+    for (let i = 0; i < select2.options.length; i++) {
+        const option2 = select2.options[i];
+        const text2Lower = option2.textContent?.toLowerCase();
+        if (text2Lower && matchingOptionsMap.has(text2Lower)) {
+            const existingEntry = matchingOptionsMap.get(text2Lower)!;
+            existingEntry.values.add(option2.value);
+            finalMatchingOptions.push({
+                value: Array.from(existingEntry.values).sort().join('-'),
+                text: existingEntry.text,
             });
-
-            const text = await res.text();
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = text;
-
-            const volumesList: Novel[] = Array.from(tempDiv.querySelectorAll("option"))
-                .slice(1)
-                .map(option => ({
-                    value: (option as HTMLOptionElement).value,
-                    label: option.textContent || '',
-                }));
-
-            CommunicationService.sendMessage("novels-volumes-hidden", volumesList);
-            CommunicationService.log(`Volumes fetched: ${volumesList.length}`);
-        } catch (error) {
-            CommunicationService.log(`Error fetching volumes: ${error}`);
+            matchingOptionsMap.delete(text2Lower); // Prevent processing the same text again
         }
+    }
+
+    // Sort the final matching options by their text content alphabetically
+    finalMatchingOptions.sort((a, b) => a.text.localeCompare(b.text));
+
+    return finalMatchingOptions;
+}
+
+
+
+
+/**
+ * Checks if the current page is a post page
+ */
+function isPostPage(): boolean {
+    return window.location.href.includes(CONFIG.urlKeywords.post);
+}
+
+/**
+ * Checks if the current page is an account page
+ */
+function isAccountPage(): boolean {
+    return window.location.href.includes(CONFIG.urlKeywords.account);
+}
+
+/**
+ * Checks the post page for required elements
+ */
+function checkPostPage(): void {
+    log(`Checking for post form: ${CONFIG.selectors.postForm}`);
+
+    const formElement = document.querySelector(CONFIG.selectors.postForm);
+    if (!formElement) {
+        log(`Post form not found. Sending 'form-missing' notification.`);
+        sendMessage('form-missing', CONFIG.selectors.postForm);
+    } else {
+        log(`Post form found.`);
+        sendMessage('loged-in');
+        getAndSendNovels();
     }
 }
 
 /**
- * Page detection and element checking
+ * Checks the account page for required elements
  */
-class PageService {
-    static isPostPage(): boolean {
-        return window.location.href.includes(CONFIG.urlKeywords.post);
-    }
+function checkAccountPage(): void {
+    log(`Checking for account navigation.`);
 
-    static isAccountPage(): boolean {
-        return window.location.href.includes(CONFIG.urlKeywords.account);
-    }
-
-    static checkPostPage(): void {
-        CommunicationService.log(`Checking for post form: ${CONFIG.selectors.postForm}`);
-
-        const formElement = document.querySelector(CONFIG.selectors.postForm);
-        if (!formElement) {
-            CommunicationService.log(`Post form not found. Sending 'form-missing' notification.`);
-            CommunicationService.sendMessage('form-missing', CONFIG.selectors.postForm);
-        } else {
-            CommunicationService.log(`Post form found.`);
-            CommunicationService.sendMessage('loged-in');
-            NovelService.getAndSendNovels();
-        }
-    }
-
-    static checkAccountPage(): void {
-        CommunicationService.log(`Checking for account navigation.`);
-
-        const accountNavElement = document.querySelector<HTMLDivElement>(CONFIG.selectors.accountNav);
-        if (accountNavElement) {
-            CommunicationService.log(`Account navigation found. Sending 'login-success' notification.`);
-            CommunicationService.sendMessage('login-success');
-        } else {
-            CommunicationService.log(`Account navigation not found.`);
-        }
+    const accountNavElement = document.querySelector<HTMLDivElement>(CONFIG.selectors.accountNav);
+    if (accountNavElement) {
+        log(`Account navigation found. Sending 'login-success' notification.`);
+        sendMessage('login-success');
+    } else {
+        log(`Account navigation not found.`);
     }
 }
 
-/**
- * Main application initialization
- */
-class App {
-    static init(): void {
-        CommunicationService.log('Script loaded.');
 
-        window.addEventListener('DOMContentLoaded', () => {
-            CommunicationService.log('DOM Content Loaded. Checking current page.');
+//  insert values into the inputs
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function insertValues(chapter: ChapterData) {
+    const [cat, series] = getTwoNumbersFromString(chapter.novel);
+    const volumeSelect = document.querySelector<HTMLSelectElement>("#volume");
+    const chapterNumberInput = document.querySelector<HTMLInputElement>("#ero_chapter");
+    const chapterTitleInput = document.querySelector<HTMLInputElement>("#title");
+    const chapterContentInput = document.querySelector<HTMLTextAreaElement>("#description");
+    const chpaterOtherWebsiteCheckbox = document.querySelector<HTMLInputElement>("#post_other");
+    const seriresSelect = document.querySelector<HTMLSelectElement>("#category");
+    const catSelect = document.querySelector<HTMLSelectElement>("#cat");
 
-            if (PageService.isPostPage()) {
-                PageService.checkPostPage();
-            } else if (PageService.isAccountPage()) {
-                PageService.checkAccountPage();
-            } else {
-                CommunicationService.log('Current URL does not match any specific check.');
-            }
-        });
-
-        // Set up IPC listeners here if needed
-        /*
-        ipcRenderer.on('message-from-main', (event, message) => {
-          // Handle messages from main process
-        });
-        */
-
-        ipcRenderer.on("novel-selected", (_, value: string) => {
-            NovelService.fetchVolumes(value);
-        });
+    if (volumeSelect && chapterNumberInput && chapterTitleInput && chapterContentInput && chpaterOtherWebsiteCheckbox && seriresSelect && catSelect) {
+        chpaterOtherWebsiteCheckbox.checked = chapter.postOnOtherWebsite;
+        chapterContentInput.value = chapter.content;
+        volumeSelect.value = chapter.volume;
+        chapterNumberInput.value = chapter.chapterNumber;
+        chapterTitleInput.value = chapter.chapterTitle;
+        seriresSelect.value = series ?? cat ?? "";
+        catSelect.value = cat ?? "";
+    } else {
+        log("Could not find all elements to insert values");
     }
+}
+
+function updateSearchParams(params: Record<string, string | null>) {
+    const currentUrl = new URL(window.location.href);
+    for (const key in params) {
+        currentUrl.searchParams.set(key, params[key] ?? '');
+    }
+    const newUrl = currentUrl.toString();
+    history.pushState(null, '', newUrl);
+    // Optionally, you can trigger a custom event to notify other parts of your app
+    // that the URL has changed.
+    window.dispatchEvent(new CustomEvent('url-changed', { detail: newUrl }));
+}
+
+
+
+interface ChapterData {
+    id: string;
+    novel: string;
+    volume: string;
+    content: string;
+    chapterNumber: string;
+    chapterTitle: string;
+    postOnOtherWebsite: boolean;
+}
+
+/**
+ * Initializes the application
+ */
+function init(): void {
+    log('Script loaded.');
+    const urlParams = new URLSearchParams(window.location.search);
+    const processed = urlParams.get("item-processed");
+
+    window.addEventListener('DOMContentLoaded', () => {
+        log('DOM Content Loaded. Checking current page.');
+
+        if (isPostPage()) {
+            checkPostPage();
+        } else if (isAccountPage()) {
+            checkAccountPage();
+        } else {
+            log('Current URL does not match any specific check.');
+        }
+    });
+
+    document.querySelector<HTMLButtonElement>("#description-html")?.click();
+    // Set up IPC listeners
+    ipcRenderer.on("novel-selected", (_, value: string) => {
+        log("novel-selected");
+        fetchVolumes(value);
+    });
+
+    ipcRenderer.on("process-data-request", (_, file: ChapterData) => {
+        insertValues(file).then(() => {
+            document.querySelector<HTMLButtonElement>("#submit")?.click();
+            ipcRenderer.send('data-processed-response', { status: 'success', id: file.id });
+        });
+        log(file.chapterTitle)
+        // submitChapter(file);
+    })
+
+    if (processed && processed !== "") {
+        const id = urlParams.get("item-processed");
+        ipcRenderer.send(`response-from-tab-${id}`, { status: 'success', id });
+        return
+    }
+    ipcRenderer.on('process-item', (_, itemData) => {
+        insertValues(itemData).then(() => {
+            updateSearchParams({ "item-processed": itemData.id, "success": "true" });
+            document.querySelector<HTMLButtonElement>("#submit")?.click();
+            // ipcRenderer.send(`response-from-tab-${itemData.id}`, { status: 'success', id: itemData.id });
+        });
+    });
 }
 
 // Initialize the application
-App.init();
+init();
+
+console.log(`[Hidden Preload] Loaded.`);

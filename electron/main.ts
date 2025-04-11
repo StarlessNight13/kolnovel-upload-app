@@ -66,7 +66,7 @@ function createHiddenWindow() {
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'hiddenPreload.mjs'),
-      nodeIntegration: false,
+      javascript: true,
       contextIsolation: true,
     },
   });
@@ -362,3 +362,100 @@ ipcMain.handle('read-and-convert-file', async (_, filePath) => {
 ipcMain.on("console-log", (_, message) => {
   console.log(message);
 });
+
+
+
+
+
+
+
+//  process one data item ================
+ipcMain.on('process-data', async (_, dataFromTab1) => {
+  console.log('Main process received data from Tab 1:', dataFromTab1);
+
+  if (hiddenWindow && mainWindow && !hiddenWindow.isDestroyed() && !mainWindow.isDestroyed()) {
+    // Send the data to Tab 2 and wait for its response
+    hiddenWindow?.webContents.send('process-data-request', dataFromTab1);
+
+  } else {
+    return { status: 'error', error: 'Tab 2 window not available.' };
+  }
+});
+
+
+ipcMain.on('data-processed-response', (_: unknown, response: unknown) => {
+  console.log('Main process received response from Tab 2:', response);
+  if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
+    // Send the response back to Tab 1
+    console.log('Sending response to Tab 1:', response);
+    mainWindow.webContents.send('data-processed-response', response);
+  }
+})
+
+
+//  process data sequentially ================
+//  this is a bit hacky, but it works
+interface ChapterData {
+  id: string;
+  content: string;
+  chapterNumber: string;
+  chapterTitle: string;
+  postOnOtherWebsite: boolean;
+}
+
+ipcMain.on('process-data-array', async (_, dataArray: ChapterData[]) => {
+  console.log('Received data array in main process:', dataArray);
+  await processDataSequentially(dataArray);
+});
+
+
+async function processDataItem(item: ChapterData) {
+  return new Promise((resolve, reject) => {
+    const hiddenTab = new BrowserWindow({
+      width: 800,
+      height: 600,
+      show: false, // Make it hidden
+      webPreferences: {
+        preload: path.join(__dirname, 'postPreload.mjs'),
+        nodeIntegration: true,
+        contextIsolation: false, // Consider security implications for hidden tabs too
+      },
+    });
+    hiddenTab.loadURL(INITIAL_HIDDEN_URL); // Load the URL
+
+    hiddenTab.webContents.on('did-finish-load', () => {
+      // Send data to the hidden tab's renderer
+      hiddenTab.webContents.send('process-item', item);
+      mainWindow?.webContents.send('tab-prossesing', { id: item.id });
+      // Listen for a response from the hidden tab
+      ipcMain.once(`response-from-tab-${item.id}`, (_, responseData) => {
+        console.log(`Received response from tab ${item.id}:`, responseData);
+        hiddenTab.close(); // Close the hidden tab after processing
+        resolve({ id: item.id, result: responseData }); // Resolve with the result
+      });
+    });
+
+
+    // Optional: Handle errors during loading
+    hiddenTab.webContents.on('did-fail-load', (_, errorCode, errorDescription, validatedURL) => {
+      console.error(`Failed to load ${validatedURL}: ${errorDescription} (Error Code: ${errorCode})`);
+      hiddenTab.close();
+      reject(new Error(`Failed to load ${validatedURL}: ${errorDescription}`));
+    });
+  });
+}
+
+async function processDataSequentially(dataArray: ChapterData[]) {
+  for (const item of dataArray) {
+    try {
+      const result = await processDataItem(item);
+      mainWindow?.webContents.send('tab-processed', result); // Send the result back to the main window
+    } catch (error) {
+      console.error(`Error processing item ${item.id}:`, error);
+      mainWindow?.webContents.send('tab-processed', { id: item.id, error: error });
+    }
+  }
+  console.log('All items processed.');
+  // Optionally, notify the main window that all processing is complete
+  mainWindow?.webContents.send('processing-complete');
+}

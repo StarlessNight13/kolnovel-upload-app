@@ -13,8 +13,6 @@ import {
   Heading2,
   Heading3,
   Italic,
-  List,
-  ListOrdered,
   Redo,
   Undo,
 } from "lucide-react";
@@ -108,29 +106,6 @@ export default function CommentEditor({
           <Heading3 className="h-4 w-4" />
         </Toggle>
 
-        <Separator orientation="vertical" className="mx-1 h-6" />
-
-        <Toggle
-          pressed={editor.isActive("bulletList")}
-          onPressedChange={() =>
-            editor.chain().focus().toggleBulletList().run()
-          }
-          aria-label="Bullet List"
-          size="sm"
-        >
-          <List className="h-4 w-4" />
-        </Toggle>
-
-        <Toggle
-          pressed={editor.isActive("orderedList")}
-          onPressedChange={() =>
-            editor.chain().focus().toggleOrderedList().run()
-          }
-          aria-label="Ordered List"
-          size="sm"
-        >
-          <ListOrdered className="h-4 w-4" />
-        </Toggle>
         <Separator orientation="vertical" className="mx-1 h-6" />
 
         <div className="ml-auto flex items-center gap-1">

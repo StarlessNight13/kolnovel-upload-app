@@ -13,6 +13,9 @@ function App() {
 
     // TypeScript now knows about window.electronAPI and its methods
     if (window.ipcRenderer) {
+      console.log("[React App] window.ipcRenderer is available.");
+
+      // Listen for the "loged-in" event
       window.ipcRenderer.on("loged-in", () => {
         setLogedIn(true);
         console.log("[React App] Logged in successfully.");
