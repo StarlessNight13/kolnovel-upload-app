@@ -1,0 +1,129 @@
+name: Create Draft Release with Builds
+
+on:
+  push:
+    branches:
+      - main # Or your main development branch
+
+jobs:
+  build:
+    name: Build
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest] # Ubuntu for Android
+        platform: [windows, android]
+      fail-fast: false # Allow all builds to attempt completion
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18.x"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Windows (if applicable)
+        if: matrix.platform == 'windows'
+        run: |
+          npm run build:windows # Ensure this script exists in your package.json
+          mkdir -p dist-windows
+          mv out/* dist-windows/ # Adjust based on your electron-builder output
+
+      - name: Set up Java JDK (for Android)
+        if: matrix.platform == 'android'
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Set up Android SDK
+        if: matrix.platform == 'android'
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android dependencies (if applicable)
+        if: matrix.platform == 'android'
+        run: |
+          cd android # Adjust path to your Android project (Capacitor/Ionic)
+          ./gradlew dependencies # Or similar command
+
+      - name: Build Android APK (if applicable)
+        if: matrix.platform == 'android'
+        run: |
+          cd android
+          ./gradlew assembleRelease # Or bundleRelease for app bundles
+          mkdir -p dist-android
+          mv app/build/outputs/apk/release/app-release.apk dist-android/ # Adjust path
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-build-${{ github.sha }}
+          path: dist-${{ matrix.platform }}/*
+          if-no-files-behavior: ignore
+
+  create_release_draft:
+    name: Create Draft Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get Commit SHA
+        id: get_sha
+        run: echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build-${{ github.sha }}
+          path: windows-builds
+
+      - name: Download Android Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-build-${{ github.sha }}
+          path: android-builds
+
+      - name: Create GitHub Draft Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_sha.outputs.COMMIT_SHA }}
+          release_name: Draft Build ${{ steps.get_sha.outputs.COMMIT_SHA }}
+          draft: true
+          prerelease: true
+          body: |
+            Draft build created on commit ${{ github.sha }}.
+            See attached artifacts.
+
+      - name: Upload Windows Release Asset
+        if: steps.download-windows-artifacts.outputs.found == 'true'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release_draft.outputs.upload_url }}
+          asset_path: windows-builds/*
+          asset_name: windows-build-${{ github.sha }}.zip # Consider zipping
+          asset_content_type: application/zip
+
+      - name: Upload Android Release Asset (APK)
+        if: steps.download-android-artifacts.outputs.found == 'true'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release_draft.outputs.upload_url }}
+          asset_path: android-builds/app-release.apk
+          asset_name: android-build-${{ github.sha }}.apk
+          asset_content_type: application/vnd.android.package-archive

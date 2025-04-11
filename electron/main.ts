@@ -220,7 +220,7 @@ ipcMain.handle('open-file-dialog', async () => {
 });
 
 
-ipcMain.handle('read-and-convert-file', async (event, filePath) => {
+ipcMain.handle('read-and-convert-file', async (_, filePath) => {
   try {
     const fileExtension = path.extname(filePath).toLowerCase();
 
