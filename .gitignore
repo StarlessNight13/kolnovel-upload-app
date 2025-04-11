@@ -15,6 +15,7 @@ dist-ssr
 out
 release
 android
+dist-electron
 
 # Editor directories and files
 .vscode/*
