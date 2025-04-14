@@ -51,7 +51,7 @@ export default function CommentEditor({
   }
 
   return (
-    <div className={cn("tiptap-editor flex flex-1 flex-col", className)}>
+    <div className={cn("tiptap-editor flex flex-1 flex-col ", className)} dir="auto">
       <div className="flex flex-wrap items-center gap-1 border-b p-2">
         <Toggle
           pressed={editor.isActive("bold")}

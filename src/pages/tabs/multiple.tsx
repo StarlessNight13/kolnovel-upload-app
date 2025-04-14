@@ -42,6 +42,7 @@ interface MultipleTabProps {
 
 export function MultipleTab({ novel, volume }: MultipleTabProps) {
   const [chapters, setChapters] = useState<ChapterData[]>([]);
+  console.log("🚀 ~ MultipleTab ~ chapters:", chapters);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [isProcessingSequence, setIsProcessingSequence] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -135,6 +136,43 @@ export function MultipleTab({ novel, volume }: MultipleTabProps) {
     );
   };
 
+  function wrapParagraphs(htmlString: string): string {
+    const paragraphs = htmlString
+      .split(/<br\s*\/?>/i)
+      .filter((p) => p.trim() !== "");
+    let result = "";
+    for (const paragraph of paragraphs) {
+      let temp = "";
+      let inTag = false;
+      for (let i = 0; i < paragraph.length; i++) {
+        const char = paragraph[i];
+        if (char === "<") {
+          inTag = true;
+          temp += char;
+        } else if (char === ">") {
+          inTag = false;
+          temp += char;
+        } else {
+          if (!inTag) {
+            let textRun = "";
+            while (i < paragraph.length && char !== "<") {
+              textRun += paragraph[i];
+              i++;
+            }
+            i--;
+            if (textRun.trim()) {
+              temp += `<p>${textRun.trim()}</p>\n<br/>`; // Add newline after closing p tag
+            }
+          } else {
+            temp += char;
+          }
+        }
+      }
+      result += temp;
+    }
+    return result;
+  }
+
   //  the rest ================
 
   const handleFileChange = async () => {
@@ -146,10 +184,9 @@ export function MultipleTab({ novel, volume }: MultipleTabProps) {
       filePath
     )) as FileData | FileData[];
     if (Array.isArray(fileContent)) {
-      console.log("Array of files");
       for (const file of fileContent) {
         addNewChapter({
-          content: file.content,
+          content: wrapParagraphs(file.content),
           chapterTitle: file.name,
           chapterNumber: "1",
           postOnOtherWebsite: true,
@@ -348,7 +385,7 @@ function ChapterCard({
                 <Editor
                   content={chapter.content}
                   onChange={(value) => onUpdate(chapter.id, "content", value)}
-                  editorClassName="max-h-44 overflow-clip"
+                  editorClassName="min-h-44 overflow-clip"
                 />
               </AccordionContent>
             </AccordionItem>
