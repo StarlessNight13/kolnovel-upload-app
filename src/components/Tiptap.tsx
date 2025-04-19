@@ -23,6 +23,7 @@ interface TiptapEditorProps {
   ssr?: boolean;
   className?: string;
   editorClassName?: string;
+  disabled?: boolean;
 }
 
 export default function CommentEditor({
@@ -31,6 +32,7 @@ export default function CommentEditor({
   ssr,
   className,
   editorClassName,
+  disabled,
 }: TiptapEditorProps) {
   const editor = useEditor({
     extensions: [
@@ -51,7 +53,10 @@ export default function CommentEditor({
   }
 
   return (
-    <div className={cn("tiptap-editor flex flex-1 flex-col ", className)} dir="auto">
+    <div
+      className={cn("tiptap-editor flex flex-1 flex-col ", className)}
+      dir="auto"
+    >
       <div className="flex flex-wrap items-center gap-1 border-b p-2">
         <Toggle
           pressed={editor.isActive("bold")}
@@ -135,6 +140,7 @@ export default function CommentEditor({
           "prose prose-sm sm:prose-base flex max-w-none flex-1 flex-col p-4",
           editorClassName
         )}
+        disabled={disabled}
       />
     </div>
   );

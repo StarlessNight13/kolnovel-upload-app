@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import Editor from "@/components/Tiptap";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { toast } from "sonner";
 
 const chapterSchema = z.object({
   chapterNumber: z.string().min(1, {
@@ -36,7 +37,7 @@ const chapterSchema = z.object({
   postOnOtherWebsite: z.boolean(),
 });
 
-export function SingleTab({
+export default function SingleTab({
   novel,
   volume,
 }: {
@@ -45,6 +46,20 @@ export function SingleTab({
 }) {
   const [isLoading, setIsLoading] = useState(false);
 
+  function getTwoNumbersFromString(
+    inputValue: string
+  ): [string | null, string | null] {
+    const parts = inputValue.split("-");
+    if (parts.length === 2) {
+      const num1 = parts[0];
+      const num2 = parts[1];
+      return [
+        isNaN(Number(num1)) ? null : num1,
+        isNaN(Number(num2)) ? null : num2,
+      ];
+    }
+    return [null, null];
+  }
   const form = useForm<z.infer<typeof chapterSchema>>({
     resolver: zodResolver(chapterSchema),
     defaultValues: {
@@ -55,62 +70,38 @@ export function SingleTab({
     },
   });
 
-  // Define IPC channel names as constants for better maintainability
-  const IPC_PROCESS_ARRAY = "process-data-array";
-  const IPC_TAB_PROCESSING = "tab-processing"; // Corrected typo
-  const IPC_TAB_PROCESSED = "tab-processed";
-
   async function onSubmit(values: z.infer<typeof chapterSchema>) {
+    const [cat, series] = getTwoNumbersFromString(novel);
+
     // Do something with the form values.
     // ✅ This will be type-safe and validated.
     setIsLoading(true);
-    window.ipcRenderer.send(IPC_PROCESS_ARRAY, [
-      {
-        ...values,
-        id: crypto.randomUUID(),
-        novel,
-        volume,
-      },
-    ]);
-  }
-
-  // Effect for setting up and tearing down IPC listeners
-  useEffect(() => {
-    // Handler for when a specific tab starts processing
-    const handleTabProcessing = (_: unknown, result: { id: string }) => {
-      console.log(`${IPC_TAB_PROCESSING}:`, result);
-    };
-
-    // Handler for when a specific tab finishes processing
-    const handleTabProcessed = (
-      _: unknown,
-      result: { id: string /* add other potential result props */ }
-    ) => {
-      console.log(`${IPC_TAB_PROCESSED}:`, result);
+    toast.loading("Posting chapter...");
+    const res = await window.ipcRenderer.invoke("post-chapter", {
+      id: crypto.randomUUID(),
+      novel,
+      volume,
+      series,
+      cat,
+      chapterNumber: values.chapterNumber,
+      chapterTitle: values.chapterTitle,
+      content: values.content,
+      postOnOtherWebsite: values.postOnOtherWebsite,
+    });
+    if (res) {
       setIsLoading(false);
+      toast.success("Chapter posted successfully!");
       form.reset();
-    };
-
-    // Register listeners
-    window.ipcRenderer.on(IPC_TAB_PROCESSING, handleTabProcessing);
-    window.ipcRenderer.on(IPC_TAB_PROCESSED, handleTabProcessed);
-
-    // Cleanup function: remove listeners when the component unmounts
-    return () => {
-      console.log("Cleaning up IPC listeners...");
-    };
-    // Rerun effect only if IPC channel names change (which they shouldn't)
-    // or if the component mounts/unmounts.
-  }, [IPC_TAB_PROCESSING, IPC_TAB_PROCESSED, form]); // Dependency array ensures setup/cleanup runs once
+    }
+  }
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-1 ">
-        <Card className="p-6 flex-1 flex-col flex">
-          <CardHeader>
-            {/* <CardTitle>Chapter Content</CardTitle> */}
-            {isLoading && <span className="text-xs">Sending Chapter...</span>}
-          </CardHeader>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-1">
+        <Card
+          className="p-6 flex-1 flex-col flex aria-disabled:border-ctp-green"
+          aria-disabled={isLoading}
+        >
           <CardContent className="flex flex-col flex-1 gap-5">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <FormField

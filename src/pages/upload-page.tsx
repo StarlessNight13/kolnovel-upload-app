@@ -8,10 +8,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus } from "lucide-react";
-import { useEffect, useState } from "react";
-import { MultipleTab } from "./tabs/multiple";
-import { SingleTab } from "./tabs/single";
+import { LoaderCircleIcon, Plus } from "lucide-react";
+import { lazy, Suspense, useEffect, useState } from "react";
+// import { MultipleTab } from "./tabs/multiple";
+// import { SingleTab } from "./tabs/single";
+
+const MultipleTab = lazy(() => import("./tabs/multiple"));
+const SingleTab = lazy(() => import("./tabs/single"));
 
 interface Novel {
   value: string;
@@ -30,21 +33,14 @@ export default function ChapterPostPage() {
   const [volume, setVolume] = useState("");
 
   useEffect(() => {
-    if (window.ipcRenderer) {
-      window.ipcRenderer.on("novels-data", (_, data) => {
-        window.ipcRenderer.send("console-log", "Novels data received");
-        setNovels(data);
-      });
-      window.ipcRenderer.on("novels-volumes", (_, data) => {
-        window.ipcRenderer.send("console-log", "Volumes data received");
-        setVolumes(data);
-      });
-    } else {
-      console.error(
-        "[React App] window is not available. Preload script might have failed."
-      );
-    }
+    window.ipcRenderer.invoke("get-novels-data").then(setNovels);
   }, []);
+
+  useEffect(() => {
+    if (novel && novel !== null) {
+      window.ipcRenderer.invoke("get-novels-volumes", novel).then(setVolumes);
+    }
+  }, [novel]);
 
   function NovelVolumeSelector({
     novels,
@@ -86,12 +82,7 @@ export default function ChapterPostPage() {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="volume">Volume Selection</Label>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!selectedNovel}
-            >
+            <Button type="button" size="sm" variant="outline" disabled>
               <Plus className="h-4 w-4 mr-1" /> New Volume
             </Button>
           </div>
@@ -134,20 +125,28 @@ export default function ChapterPostPage() {
           onVolumeChange={setVolume}
         />
 
-        <Tabs defaultValue="single" className="w-full flex-1">
-          <TabsList className="grid w-full grid-cols-2 mb-6">
-            <TabsTrigger value="single">Single Chapter</TabsTrigger>
-            <TabsTrigger value="multiple">Multiple Chapters</TabsTrigger>
-          </TabsList>
+        <Suspense
+          fallback={
+            <div className="min-h-screen min-w-screen flex flex-col items-center justify-center">
+              <LoaderCircleIcon className="animate-spin" />
+            </div>
+          }
+        >
+          <Tabs defaultValue="single" className="w-full flex-1">
+            <TabsList className="grid w-full grid-cols-2 mb-6">
+              <TabsTrigger value="single">Single Chapter</TabsTrigger>
+              <TabsTrigger value="multiple">Multiple Chapters</TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="single" className="flex-1 flex">
-            <SingleTab novel={novel} volume={volume} />
-          </TabsContent>
+            <TabsContent value="single" className="flex-1 flex">
+              <SingleTab novel={novel} volume={volume} />
+            </TabsContent>
 
-          <TabsContent value="multiple">
-            <MultipleTab novel={novel} volume={volume} />
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="multiple">
+              <MultipleTab novel={novel} volume={volume} />
+            </TabsContent>
+          </Tabs>
+        </Suspense>
       </div>
     </div>
   );

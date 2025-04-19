@@ -6,6 +6,7 @@ import mammoth from 'mammoth';
 import markdownit from 'markdown-it';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fetchNovels, fetchVolumes, isLoggedIn, postChapter, saveCookies } from './lib/util';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -24,17 +25,18 @@ process.env.APP_ROOT = path.join(__dirname, '..')
 export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
 export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron')
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
+// const COOKIES_FILE_PATH = path.join(__dirname, 'cookies.json'); // Adjust the path as needed
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 
 // windows
 let mainWindow: BrowserWindow | null;
-let hiddenWindow: BrowserWindow | null;
+let loginWindow: BrowserWindow | null;
 
 // --- Configuration ---
-const INITIAL_HIDDEN_URL = 'https://kolnovel.com/post/'; // An example page guaranteed *not* to have the selector
-const ALTERNATIVE_HIDDEN_URL = 'https://kolnovel.com/account/'; // URL to load if element is missing
+// const INITIAL_HIDDEN_URL = 'https://kolnovel.com/post/'; // An example page guaranteed *not* to have the selector
+const LOGIN_URL = 'https://kolnovel.com/account/'; // URL to load if element is missing
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -59,8 +61,8 @@ function createWindow() {
   }
 }
 
-function createHiddenWindow() {
-  hiddenWindow = new BrowserWindow({
+function createLoginWindow() {
+  loginWindow = new BrowserWindow({
     width: 800, // Adjust as needed
     height: 600, // Adjust as needed
     show: false,
@@ -70,16 +72,14 @@ function createHiddenWindow() {
       contextIsolation: true,
     },
   });
-  console.log(`[Main] Loading initial hidden URL: ${INITIAL_HIDDEN_URL}`);
-  hiddenWindow.loadURL(INITIAL_HIDDEN_URL); // Load the URL
+  console.log(`[Main] Loading initial hidden URL: ${LOGIN_URL}`);
+  loginWindow.loadURL(LOGIN_URL); // Load the URL
 
-  hiddenWindow.on('closed', () => {
-    hiddenWindow = null;
+  loginWindow.on('closed', () => {
+    loginWindow = null;
   });
-  // Optional: Handle load failures
-  hiddenWindow.webContents.on('did-fail-load', (_, errorCode, errorDescription, validatedURL) => {
+  loginWindow.webContents.on('did-fail-load', (_, errorCode, errorDescription, validatedURL) => {
     console.error(`[Hidden Window] Failed to load ${validatedURL}: ${errorDescription} (Code: ${errorCode})`);
-    // Optionally notify the main window or retry
   });
 }
 
@@ -90,7 +90,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
     mainWindow = null
-    hiddenWindow = null
+    // hiddenWindow = null
+    loginWindow = null
   }
 })
 
@@ -104,102 +105,93 @@ app.on('activate', () => {
 
 app.whenReady().then(() => {
   createWindow();
-  createHiddenWindow();
+  checkLogin();
   app.on('activate', () => {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open.
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
-      // Optionally re-create hidden window if needed
-      if (!hiddenWindow) {
-        createHiddenWindow();
-      }
     }
   });
 })
 
 
 
-// --- IPC Handling ---
+//   LOGIN ================
 
+async function checkLogin() {
+  const logedIn = await isLoggedIn();
+  if (logedIn) {
+    console.log("Logged in");
+    if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("loged-in");
+    }
+    return
+  }
 
-// Listen for the notification from the hidden window's preload script
-ipcMain.on('form-missing', (_, selector) => {
-  console.log(`[Main] Received notification: Element '${selector}' is missing in hidden window.`);
+  createLoginWindow();
 
-  if (!hiddenWindow || hiddenWindow.isDestroyed()) {
+  if (!loginWindow || loginWindow.isDestroyed()) {
     console.warn('[Main] Hidden window does not exist. Cannot change URL or visibility.');
     return;
   }
-
-  console.log(`[Main] Loading URL in hidden window: ${ALTERNATIVE_HIDDEN_URL}`);
-  hiddenWindow.loadURL(ALTERNATIVE_HIDDEN_URL);
 
   if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
     console.log('[Main] Hiding main window and showing hidden window.');
     mainWindow.hide();
-    hiddenWindow.show();
+    loginWindow.show();
   } else {
     console.warn('[Main] Main window does not exist or is not ready. Cannot change visibility.');
   }
-});
+}
 
-ipcMain.on('login-success', () => {
-  console.log(`[Main] Received notification: Login successful.`);
 
-  if (!hiddenWindow || hiddenWindow.isDestroyed()) {
+
+
+
+
+// --- IPC Handling ---
+
+
+
+//  LOGIN ================
+
+ipcMain.on("login-success", async () => {
+  console.log("Logged in successfully");
+  if (!loginWindow || loginWindow.isDestroyed()) {
     console.warn('[Main] Hidden window does not exist. Cannot change URL or visibility.');
     return;
   }
 
-  console.log(`[Main] Loading URL in hidden window: ${INITIAL_HIDDEN_URL}`);
-  hiddenWindow.loadURL(INITIAL_HIDDEN_URL);
-
-  if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
-    console.log('[Main] Hiding hidden window and showing main window.');
-    hiddenWindow.hide();
-    mainWindow.show();
-    mainWindow.webContents.send("loged-in");
-  } else {
-    console.warn('[Main] Main window does not exist or is not ready. Cannot change visibility.');
+  const cookies = await loginWindow.webContents.session.cookies.get({});
+  await saveCookies(cookies);
+  const logedIn = await isLoggedIn();
+  if (logedIn) {
+    console.log("Logged in");
+    if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("loged-in");
+      mainWindow.show();
+    }
+    loginWindow.close();
   }
+  return;
+})
+
+//  GET DATA ================
+ipcMain.handle("get-novels-data", fetchNovels);
+
+
+ipcMain.handle("get-novels-volumes", async (_, novelId) => {
+  const volumes = await fetchVolumes(novelId);
+  return volumes;
 });
 
 
-ipcMain.on('loged-in', () => {
-  if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("loged-in");
-  } else {
-    console.warn('[Main] Main window does not exist or is not ready. Cannot change visibility.');
-  }
-});
+//  POST CHAPTER ================
 
-ipcMain.on("novels-data-hidden", (_, novels) => {
-  if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("novels-data", novels);
-  } else {
-    console.warn('[Main] Main window does not exist or is not ready. Cannot change visibility.');
-  }
-});
+ipcMain.handle("post-chapter", postChapter);
 
-
-ipcMain.on("novel-selected", (_, value: string) => {
-  if (hiddenWindow && hiddenWindow.webContents && !hiddenWindow.isDestroyed()) {
-    hiddenWindow.webContents.send("novel-selected", value);
-  } else {
-    console.warn('[Main] Main window does not exist or is not ready. Cannot change visibility.');
-  }
-});
-
-ipcMain.on("novels-volumes-hidden", (_, volumes) => {
-  if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("novels-volumes", volumes);
-  } else {
-    console.warn('[Main] Main window does not exist or is not ready. Cannot change visibility.');
-  }
-});
-
-
+//  FILE ================
 
 ipcMain.handle('open-file-dialog', async () => {
   const result = await dialog.showOpenDialog({
@@ -365,99 +357,3 @@ ipcMain.on("console-log", (_, message) => {
   console.log(message);
 });
 
-
-
-
-
-
-
-//  process one data item ================
-ipcMain.on('process-data', async (_, dataFromTab1) => {
-  console.log('Main process received data from Tab 1:', dataFromTab1);
-
-  if (hiddenWindow && mainWindow && !hiddenWindow.isDestroyed() && !mainWindow.isDestroyed()) {
-    // Send the data to Tab 2 and wait for its response
-    hiddenWindow?.webContents.send('process-data-request', dataFromTab1);
-
-  } else {
-    return { status: 'error', error: 'Tab 2 window not available.' };
-  }
-});
-
-
-ipcMain.on('data-processed-response', (_: unknown, response: unknown) => {
-  console.log('Main process received response from Tab 2:', response);
-  if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
-    // Send the response back to Tab 1
-    console.log('Sending response to Tab 1:', response);
-    mainWindow.webContents.send('data-processed-response', response);
-  }
-})
-
-
-//  process data sequentially ================
-//  this is a bit hacky, but it works
-interface ChapterData {
-  id: string;
-  content: string;
-  chapterNumber: string;
-  chapterTitle: string;
-  postOnOtherWebsite: boolean;
-}
-
-ipcMain.on('process-data-array', async (_, dataArray: ChapterData[]) => {
-  console.log('Received data array in main process:', dataArray);
-  await processDataSequentially(dataArray);
-});
-
-
-async function processDataItem(item: ChapterData) {
-  return new Promise((resolve, reject) => {
-    const hiddenTab = new BrowserWindow({
-      width: 800,
-      height: 600,
-      show: false, // Make it hidden
-      webPreferences: {
-        preload: path.join(__dirname, 'postPreload.mjs'),
-        nodeIntegration: true,
-        contextIsolation: false, // Consider security implications for hidden tabs too
-      },
-    });
-    hiddenTab.loadURL(INITIAL_HIDDEN_URL); // Load the URL
-
-    hiddenTab.webContents.on('did-finish-load', () => {
-      // Send data to the hidden tab's renderer
-      hiddenTab.webContents.send('process-item', item);
-      mainWindow?.webContents.send('tab-prossesing', { id: item.id });
-      // Listen for a response from the hidden tab
-      ipcMain.once(`response-from-tab-${item.id}`, (_, responseData) => {
-        console.log(`Received response from tab ${item.id}:`, responseData);
-        hiddenTab.close(); // Close the hidden tab after processing
-        resolve({ id: item.id, result: responseData }); // Resolve with the result
-      });
-    });
-
-
-    // Optional: Handle errors during loading
-    hiddenTab.webContents.on('did-fail-load', (_, errorCode, errorDescription, validatedURL) => {
-      console.error(`Failed to load ${validatedURL}: ${errorDescription} (Error Code: ${errorCode})`);
-      hiddenTab.close();
-      reject(new Error(`Failed to load ${validatedURL}: ${errorDescription}`));
-    });
-  });
-}
-
-async function processDataSequentially(dataArray: ChapterData[]) {
-  for (const item of dataArray) {
-    try {
-      const result = await processDataItem(item);
-      mainWindow?.webContents.send('tab-processed', result); // Send the result back to the main window
-    } catch (error) {
-      console.error(`Error processing item ${item.id}:`, error);
-      mainWindow?.webContents.send('tab-processed', { id: item.id, error: error });
-    }
-  }
-  console.log('All items processed.');
-  // Optionally, notify the main window that all processing is complete
-  mainWindow?.webContents.send('processing-complete');
-}
