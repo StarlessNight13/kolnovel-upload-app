@@ -35,12 +35,7 @@ export default function CommentEditor({
   disabled,
 }: TiptapEditorProps) {
   const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Heading.configure({
-        levels: [1, 2, 3],
-      }),
-    ],
+    extensions: [StarterKit, Heading],
     content,
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML());
@@ -55,7 +50,7 @@ export default function CommentEditor({
   return (
     <div
       className={cn("tiptap-editor flex flex-1 flex-col ", className)}
-      dir="auto"
+      dir="rtl"
     >
       <div className="flex flex-wrap items-center gap-1 border-b p-2">
         <Toggle
@@ -137,9 +132,10 @@ export default function CommentEditor({
       <EditorContent
         editor={editor}
         className={cn(
-          "prose prose-sm sm:prose-base flex max-w-none flex-1 flex-col p-4",
+          "prose prose-sm sm:prose-base flex max-w-none flex-1 flex-col  text-right ",
           editorClassName
         )}
+        dir="rtl"
         disabled={disabled}
       />
     </div>

@@ -1,8 +1,7 @@
-import { IpcMainInvokeEvent } from 'electron';
+import { app, IpcMainInvokeEvent } from 'electron';
 import fs from 'fs/promises';
 import { parse } from 'node-html-parser';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 // Types
 type DateTimeFormat = {
@@ -46,8 +45,10 @@ const URLS = {
     POST: 'https://kolnovel.com/post/',
     VOLUMES: 'https://kolnovel.com/wp-admin/admin-ajax.php'
 };
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const COOKIES_FILE_PATH = path.join(__dirname, 'cookies.json');
+// const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const cacheDir = path.join(app.getPath('userData'), 'kolnovel-uploader');
+
+const COOKIES_FILE_PATH = path.join(cacheDir, 'cookies.json');
 
 /**
  * Returns a formatted date time object with current time information
@@ -89,15 +90,19 @@ async function loadCookies(): Promise<Cookie[]> {
         return JSON.parse(cookiesData);
     } catch (error) {
         console.log('Error reading cookies file (may not exist yet):', error);
+        await saveCookies([]);
         return [];
     }
 }
+
+
 
 /**
  * Saves cookies to the file system
  */
 async function saveCookies(cookies: Cookie[]): Promise<void> {
     try {
+        await fs.mkdir(path.dirname(COOKIES_FILE_PATH), { recursive: true });
         await fs.writeFile(COOKIES_FILE_PATH, JSON.stringify(cookies, null, 2));
     } catch (error) {
         console.error('Error saving cookies:', error);
@@ -444,6 +449,7 @@ async function postChapter(_: IpcMainInvokeEvent, chapterData: {
         ero_volume1: chapterData.volume,
         postOnOtherWebsite: chapterData.postOnOtherWebsite,
     });
+
 
     return await safeFetch(
         URLS.POST,

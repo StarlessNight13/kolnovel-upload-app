@@ -1,24 +1,19 @@
-import { Layers2, Plus, StopCircle, Upload, X } from "lucide-react";
-import { useCallback, useState } from "react";
+import { StopCircle } from "lucide-react";
+import { useCallback, useMemo, useReducer, useRef } from "react";
 
-import Editor from "@/components/Tiptap";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
+import ActionButtons from "@/components/mutli/action";
+import ChaptersList from "@/components/mutli/chapter-list";
+import UploadSection from "@/components/mutli/uploadSection";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Toggle } from "@/components/ui/toggle";
+import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
+
+// --- Type Definitions ---
 
 interface ChapterData {
   id: string;
   content: string;
-  chapterNumber: string;
+  chapterNumber: string; // Keep as string if input allows non-numeric initially
   chapterTitle: string;
   postOnOtherWebsite: boolean;
 }
@@ -26,7 +21,7 @@ interface ChapterData {
 interface FileData {
   type: string;
   name: string;
-  content: string;
+  content: string; // Assuming HTML string
 }
 
 interface MultipleTabProps {
@@ -34,431 +29,478 @@ interface MultipleTabProps {
   volume: string;
 }
 
+// --- State Management (useReducer) ---
+
+interface ComponentState {
+  chapters: ChapterData[];
+  loadingId: string | null;
+  isProcessingSequence: boolean;
+  isSuccess: boolean;
+  error: string | null; // Add error state for better feedback
+  progress: number;
+}
+
+type Action =
+  | { type: "ADD_CHAPTER"; payload: ChapterData }
+  | { type: "ADD_MULTIPLE_CHAPTERS"; payload: ChapterData[] }
+  | { type: "REMOVE_CHAPTER"; payload: string } // id
+  | {
+      type: "UPDATE_CHAPTER";
+      payload: { id: string; field: keyof ChapterData; value: unknown };
+    }
+  | { type: "START_PROCESSING" }
+  | { type: "SET_LOADING_ID"; payload: string | null }
+  | { type: "FINISH_PROCESSING"; payload: { success: boolean; error?: string } }
+  | { type: "RESET_STATE" } // Optional: for complete reset
+  | { type: "UPDATE_PROGRESS"; payload: number };
+
+const initialState: ComponentState = {
+  chapters: [],
+  loadingId: null,
+  isProcessingSequence: false,
+  isSuccess: false,
+  error: null,
+  progress: 0,
+};
+
+function chapterReducer(state: ComponentState, action: Action): ComponentState {
+  switch (action.type) {
+    case "ADD_CHAPTER":
+      // Prevent adding if processing
+      if (state.isProcessingSequence) return state;
+      return {
+        ...state,
+        chapters: [...state.chapters, action.payload],
+        isSuccess: false, // Reset success state on modification
+        error: null,
+      };
+    case "ADD_MULTIPLE_CHAPTERS":
+      if (state.isProcessingSequence) return state;
+      return {
+        ...state,
+        chapters: [...state.chapters, ...action.payload],
+        isSuccess: false, // Reset success state on modification
+        error: null,
+      };
+    case "REMOVE_CHAPTER":
+      // Note: This allows removing chapters even during processing in the UI,
+      // but they might still be processed if already sent. Consider disabling removal during processing.
+      return {
+        ...state,
+        chapters: state.chapters.filter((ch) => ch.id !== action.payload),
+        isSuccess: state.chapters.length - 1 === 0 && state.isSuccess, // Maintain success if last chapter removed was the one making it successful
+        error: null,
+      };
+    case "UPDATE_CHAPTER":
+      // Prevent updates during processing
+      if (state.isProcessingSequence) return state;
+      return {
+        ...state,
+        chapters: state.chapters.map((chapter) =>
+          chapter.id === action.payload.id
+            ? { ...chapter, [action.payload.field]: action.payload.value }
+            : chapter
+        ),
+        isSuccess: false, // Reset success state on modification
+        error: null,
+      };
+    case "START_PROCESSING":
+      return {
+        ...state,
+        isProcessingSequence: true,
+        loadingId: null,
+        isSuccess: false,
+        error: null,
+      };
+    case "SET_LOADING_ID":
+      return {
+        ...state,
+        loadingId: action.payload,
+      };
+    case "FINISH_PROCESSING":
+      return {
+        ...state,
+        isProcessingSequence: false,
+        loadingId: null,
+        isSuccess: action.payload.success && !action.payload.error, // Only success if no error occurred overall
+        error: action.payload.error || null,
+      };
+    case "RESET_STATE":
+      return initialState;
+    case "UPDATE_PROGRESS":
+      return {
+        ...state,
+        progress: action.payload,
+      };
+    default:
+      return state;
+  }
+}
+
+// --- Utility Function ---
+/**
+ * Replaces <br> tags and empty <p> tags (containing only whitespace or &nbsp;)
+ * with a paragraph containing a newline character (<p>\n</p>).
+ * Moved outside the component to prevent re-creation on renders.
+ */
+function normalizeLineBreaks(htmlString: string): string {
+  if (!htmlString) return ""; // Handle null/undefined input
+  const newlineParagraph = "<p>\n</p>";
+
+  // 1. Replace all variations of <br> tags
+  const brRegex = /<br\s*\/?>/gi;
+  let processedHtml = htmlString.replace(brRegex, newlineParagraph);
+
+  // 2. Replace <p> tags that are empty or contain only whitespace or &nbsp;
+  const emptyPRegex = /<p[^>]*>\s*(?:&nbsp;)?\s*<\/p>/gi;
+  processedHtml = processedHtml.replace(emptyPRegex, newlineParagraph);
+
+  return processedHtml;
+}
+
+// --- Main Component ---
+
 export default function MultipleTab({ novel, volume }: MultipleTabProps) {
-  const [chapters, setChapters] = useState<ChapterData[]>([]);
-  const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [isProcessingSequence, setIsProcessingSequence] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
+  const [state, dispatch] = useReducer(chapterReducer, initialState);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Stable function to remove a chapter using functional update
+  // --- Memoized Callbacks for Actions ---
+  // These functions now dispatch actions to the reducer
+
   const removeChapter = useCallback((idToRemove: string) => {
-    toast("Chapter removed");
-    setChapters((prevChapters) =>
-      prevChapters.filter((ch) => ch.id !== idToRemove)
-    );
-  }, []); // No dependencies needed as setChapters is stable
+    dispatch({ type: "REMOVE_CHAPTER", payload: idToRemove });
+    toast("Chapter removed"); // Toast remains immediate feedback
+  }, []); // dispatch is stable and doesn't need to be dependency
 
-  // Function to cancel the upload process
-  const cancelUpload = useCallback(() => {
-    if (!isProcessingSequence) return;
+  const updateChapter = useCallback(
+    (id: string, field: keyof ChapterData, value: unknown) => {
+      dispatch({ type: "UPDATE_CHAPTER", payload: { id, field, value } });
+    },
+    [] // dispatch is stable
+  );
 
-    window.ipcRenderer
-      .invoke("cancel-upload")
-      .then(() => {
-        toast.info("Upload cancelled");
-        setIsProcessingSequence(false);
-        setLoadingId(null);
-      })
-      .catch((err) => {
-        console.error("Failed to cancel upload:", err);
-        toast.error("Failed to cancel upload");
+  const addNewChapter = useCallback(
+    (chapterData?: Partial<Omit<ChapterData, "id">>) => {
+      const newChapter: ChapterData = {
+        id: crypto.randomUUID(),
+        content: chapterData?.content ?? "",
+        chapterTitle: chapterData?.chapterTitle ?? "Untitled Chapter",
+        chapterNumber: chapterData?.chapterNumber ?? "", // Default to empty string, let validation handle it
+        postOnOtherWebsite: chapterData?.postOnOtherWebsite ?? true,
+      };
+      dispatch({ type: "ADD_CHAPTER", payload: newChapter });
+    },
+    [] // dispatch is stable
+  );
+
+  // --- Electron Interaction Logic ---
+
+  const handleFileChange = useCallback(async () => {
+    if (state.isProcessingSequence) return;
+
+    try {
+      const filePath = await window.ipcRenderer.invoke("open-file-dialog");
+      if (!filePath) return; // User cancelled dialog
+
+      // Add loading state feedback if file reading takes time
+      const fileResult = (await window.ipcRenderer.invoke(
+        "read-and-convert-file",
+        filePath
+      )) as FileData | FileData[] | null; // Expect null on error
+
+      if (!fileResult) {
+        toast.error("Failed to read or convert file.");
+        return;
+      }
+
+      const processFile = (file: FileData): ChapterData => {
+        // Try to extract number, default to empty string or a placeholder if needed
+        const potentialNumber = file.name.split(".")[0];
+        const chapterNumber = /^\d+$/.test(potentialNumber)
+          ? potentialNumber
+          : "";
+
+        return {
+          id: crypto.randomUUID(),
+          content: normalizeLineBreaks(file.content),
+          chapterTitle: file.name, // Consider cleaning up the extension here too if desired
+          chapterNumber: chapterNumber,
+          postOnOtherWebsite: true,
+        };
+      };
+
+      if (Array.isArray(fileResult)) {
+        // Create chapters first, then dispatch once
+        const newChapters = fileResult.map(processFile);
+        if (newChapters.length > 0) {
+          dispatch({ type: "ADD_MULTIPLE_CHAPTERS", payload: newChapters });
+          toast.success(`${newChapters.length} chapters added from ZIP.`);
+        } else {
+          toast.info("No valid chapter files found in the ZIP.");
+        }
+      } else {
+        const newChapter = processFile(fileResult);
+        dispatch({ type: "ADD_CHAPTER", payload: newChapter });
+        toast.success(`Chapter "${newChapter.chapterTitle}" added.`);
+      }
+    } catch (error) {
+      console.error("Error handling file change:", error);
+      toast.error("An error occurred while processing the file.");
+      // Optionally dispatch an error state to the reducer
+    }
+  }, [state.isProcessingSequence]); // dispatch is stable
+
+  const cancelUpload = useCallback(async () => {
+    if (!abortControllerRef.current) return;
+
+    abortControllerRef.current.abort(); // Signal abortion
+
+    try {
+      // Ask main process to clean up anything it might be doing
+      await window.ipcRenderer.invoke("cancel-upload");
+      toast.info("Upload cancelled");
+      dispatch({
+        type: "FINISH_PROCESSING",
+        payload: { success: false, error: "Cancelled by user" },
       });
-  }, [isProcessingSequence]);
+    } catch (err) {
+      console.error("Failed to formally cancel upload in main process:", err);
+      // Still update UI state even if main process cancellation fails
+      dispatch({
+        type: "FINISH_PROCESSING",
+        payload: { success: false, error: "Cancellation failed" },
+      });
+      toast.error("Failed to fully cancel upload process.");
+    } finally {
+      abortControllerRef.current = null; // Clean up ref
+    }
+  }, []); // dispatch is stable
 
-  // Function to start the whole process
-  const handleMultipleChaptersSubmit = async (e?: React.FormEvent) => {
-    e?.preventDefault(); // Optional preventDefault
-
-    // Don't start if already processing or no chapters left
-    if (isProcessingSequence || chapters.length === 0) {
+  const handleMultipleChaptersSubmit = useCallback(async () => {
+    if (state.isProcessingSequence || state.chapters.length === 0) {
       console.log("Processing already in progress or no chapters to process.");
       return;
     }
+    if (!novel || novel === "") return;
 
     console.log("Starting chapter processing sequence...");
 
-    // Reset states for a new sequence run
-    setLoadingId(null);
-    setIsSuccess(false);
-    setIsProcessingSequence(true); // Signal that the sequence is starting
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+    dispatch({ type: "START_PROCESSING" });
 
-    // Send the initial data to the main process
-    // The main process is expected to handle iterating through the chapters.
-    const chaptersData = chapters.map((ch) => ({ ...ch, novel, volume }));
+    // Create a snapshot of chapters to process at this moment
+    const chaptersToProcess = state.chapters.map((ch) => ({
+      ...ch,
+      novel, // Add novel/volume context here
+      volume,
+    }));
+
+    let processingError: string | null = null;
 
     try {
-      for (const chapter of chaptersData) {
-        if (!isProcessingSequence) break; // Check if process was cancelled
-
-        setLoadingId(chapter.id);
-
-        const posted = await window.ipcRenderer.invoke("post-chapter", chapter);
-
-        if (!posted) {
-          toast.error(`Error posting chapter: ${chapter.chapterTitle}`);
-          continue; // Move to the next item in the array
+      const chaptersNumber = chaptersToProcess.length;
+      for (const chapter of chaptersToProcess) {
+        if (signal.aborted) {
+          console.log("Upload aborted by user, breaking loop.");
+          processingError = "Cancelled by user";
+          break; // Exit the loop
         }
 
-        toast.success(`Posted chapter: ${chapter.chapterTitle}`);
-        setChapters((prevChapters) => {
-          return prevChapters.filter((ch) => ch.id !== chapter.id);
-        });
-      }
+        dispatch({ type: "SET_LOADING_ID", payload: chapter.id });
 
-      // Check if all chapters were processed
-      setChapters((prevChapters) => {
-        if (prevChapters.length === 0) {
-          console.log("All chapters processed successfully.");
-          setIsSuccess(true);
-        }
-        return prevChapters;
-      });
-    } catch (error) {
-      console.error("Error during upload:", error);
-      toast.error("Upload process encountered an error");
-    } finally {
-      setIsProcessingSequence(false);
-      setLoadingId(null);
-    }
-  };
+        try {
+          const posted = await window.ipcRenderer.invoke(
+            "post-chapter",
+            chapter
+          );
 
-  function wrapParagraphs(htmlString: string): string {
-    const paragraphs = htmlString
-      .split(/<br\s*\/?>/i)
-      .filter((p) => p.trim() !== "");
-    let result = "";
-    for (const paragraph of paragraphs) {
-      let temp = "";
-      let inTag = false;
-      for (let i = 0; i < paragraph.length; i++) {
-        const char = paragraph[i];
-        if (char === "<") {
-          inTag = true;
-          temp += char;
-        } else if (char === ">") {
-          inTag = false;
-          temp += char;
-        } else {
-          if (!inTag) {
-            let textRun = "";
-            while (i < paragraph.length && paragraph[i] !== "<") {
-              textRun += paragraph[i];
-              i++;
-            }
-            i--;
-            if (textRun.trim()) {
-              temp += `<p>${textRun.trim()}</p>\n<br/>`; // Add newline after closing p tag
-            }
-          } else {
-            temp += char;
+          if (signal.aborted) {
+            // Check again *after* await, in case cancelled during wait
+            console.log("Upload aborted during chapter post, breaking loop.");
+            processingError = "Cancelled by user";
+            break;
           }
+          const index = chaptersToProcess.findIndex(
+            (ch) => ch.id === chapter.id
+          );
+          if (posted) {
+            toast.success(`Posted chapter: ${chapter.chapterTitle}`);
+            dispatch({
+              type: "UPDATE_PROGRESS",
+              payload: (index * 100) / chaptersNumber,
+            });
+            // Remove from UI state *after* successful post confirmed by main process
+            // Note: This dispatches inside a loop, causing re-renders.
+            // If performance is critical, consider batching removals or updating status differently.
+            dispatch({ type: "REMOVE_CHAPTER", payload: chapter.id });
+          } else {
+            // Handle failure for a single chapter
+            toast.error(`Error posting chapter: ${chapter.chapterTitle}`);
+            console.warn(
+              `Failed to post chapter ${chapter.id} - ${chapter.chapterTitle}`
+            );
+            // Decide if one failure should stop the whole process
+            // processingError = `Failed to post ${chapter.chapterTitle}`;
+            // break; // Uncomment to stop on first error
+            continue; // Continue with the next chapter
+          }
+        } catch (err: unknown) {
+          if (signal.aborted) {
+            console.log("Upload aborted during chapter post error handling.");
+            processingError = "Cancelled by user";
+          } else {
+            console.error(`IPC Error posting chapter ${chapter.id}:`, err);
+            toast.error(
+              `Error posting chapter: ${chapter.chapterTitle} (IPC Error)`
+            );
+            processingError = `Error during posting of ${chapter.chapterTitle}`;
+            // break; // Uncomment to stop on first error
+          }
+          break; // Stop processing further chapters on IPC error or abort
         }
-      }
-      result += temp;
-    }
-    return result;
-  }
+      } // End of for loop
+    } catch (error) {
+      // Catch errors outside the loop (e.g., setup issues)
+      console.error("Unexpected error during upload sequence:", error);
+      processingError =
+        "An unexpected error occurred during the upload process.";
+      toast.error(processingError);
+    } finally {
+      // Check the final state based on what happened
+      // Need to read the *current* state here, as chapters might have been removed by dispatch
+      const finalChapterCount = chapterReducer(state, {
+        type: "FINISH_PROCESSING",
+        payload: { success: false },
+      }).chapters.length; // Simulate state to check count
+      const allProcessedSuccessfully =
+        processingError === null && finalChapterCount === 0;
 
-  const handleFileChange = async () => {
-    if (isProcessingSequence) return;
-
-    const filePath = await window.ipcRenderer.invoke("open-file-dialog");
-    if (!filePath) return;
-
-    const fileContent = (await window.ipcRenderer.invoke(
-      "read-and-convert-file",
-      filePath
-    )) as FileData | FileData[];
-
-    if (Array.isArray(fileContent)) {
-      for (const file of fileContent) {
-        addNewChapter({
-          content: wrapParagraphs(file.content),
-          chapterTitle: file.name,
-          chapterNumber: isNaN(Number(file.name.split(".")[0]))
-            ? "1"
-            : file.name.split(".")[0],
-          postOnOtherWebsite: true,
-        });
-      }
-    } else {
-      addNewChapter({
-        content: fileContent.content,
-        chapterTitle: fileContent.name,
-        chapterNumber: "1",
-        postOnOtherWebsite: true,
+      dispatch({
+        type: "FINISH_PROCESSING",
+        payload: {
+          success: allProcessedSuccessfully,
+          error: processingError ?? undefined,
+        },
       });
+
+      if (allProcessedSuccessfully) {
+        console.log("All chapters processed successfully.");
+        // Success toast is implicitly handled by the state update now
+      } else if (!processingError) {
+        console.log(
+          "Processing finished, but some chapters may remain or failed."
+        );
+      }
+
+      abortControllerRef.current = null; // Clean up controller ref
     }
-  };
+  }, [state, novel, volume]); // dispatch is stable
 
-  const addNewChapter = (chapterData?: Partial<Omit<ChapterData, "id">>) => {
-    if (isProcessingSequence) return;
+  // --- Render Logic ---
 
-    const newChapter: ChapterData = {
-      id: crypto.randomUUID(),
-      content: "",
-      chapterTitle: "",
-      chapterNumber: "",
-      postOnOtherWebsite: true,
-      ...chapterData,
-    };
+  // Memoize sub-components if their props don't change often and rendering is expensive
+  // Note: Pass primitive state values instead of the whole state object if possible
+  const uploadSection = useMemo(
+    () => (
+      <UploadSection
+        onFileUpload={handleFileChange}
+        disabled={state.isProcessingSequence}
+        hasChapters={state.chapters.length > 0}
+      />
+    ),
+    [handleFileChange, state.isProcessingSequence, state.chapters.length]
+  );
 
-    setChapters((prev) => [...prev, newChapter]);
-  };
-
-  const updateChapter = (
-    id: string,
-    field: keyof ChapterData,
-    value: unknown
-  ) => {
-    if (isProcessingSequence) return;
-
-    setChapters((prev) =>
-      prev.map((chapter) =>
-        chapter.id === id ? { ...chapter, [field]: value } : chapter
-      )
-    );
-  };
+  const chaptersList = useMemo(
+    () => (
+      <ChaptersList
+        chapters={state.chapters}
+        loadingId={state.loadingId}
+        onRemove={removeChapter}
+        onUpdate={updateChapter}
+        disabled={state.isProcessingSequence}
+      />
+    ),
+    [
+      state.chapters,
+      state.loadingId,
+      state.isProcessingSequence,
+      removeChapter,
+      updateChapter,
+    ]
+  );
 
   return (
-    <Card className="p-6 mb-14">
-      <div className="flex items-center justify-between">
-        {isProcessingSequence && (
-          <div className="flex items-center gap-4 w-full justify-between">
-            <span className="text-sm font-medium">
-              {loadingId
+    // Use React.Fragment if Card is not always the root
+    <Card className="p-6 mb-14 relative">
+      {" "}
+      {/* Added relative for absolute positioning inside */}
+      {/* Processing/Status Indicator */}
+      <div className="absolute top-2 right-2 left-2 z-10 p-2 bg-background/80 backdrop-blur-sm rounded border border-border shadow-sm flex items-center justify-between min-h-[40px]">
+        {state.isProcessingSequence && (
+          <>
+            <span className="text-sm font-medium animate-pulse">
+              {state.loadingId
                 ? `Posting ${
-                    chapters.find((ch) => ch.id === loadingId)?.chapterTitle ||
-                    "chapter"
+                    state.chapters.find((ch) => ch.id === state.loadingId)
+                      ?.chapterTitle || "chapter"
                   }...`
                 : "Processing..."}
             </span>
             <Button
               variant="destructive"
+              size="sm" // Smaller button for status area
               onClick={cancelUpload}
-              className="flex items-center gap-2"
+              className="flex items-center gap-1" // Reduced gap
             >
               <StopCircle className="h-4 w-4" />
-              Cancel Upload
+              Cancel
             </Button>
-          </div>
+          </>
         )}
-        {isSuccess && (
-          <span className="text-green-500 font-medium">
+        {state.isSuccess && !state.isProcessingSequence && (
+          <span className="text-green-600 font-medium text-sm">
             All chapters posted successfully!
           </span>
         )}
+        {state.error && !state.isProcessingSequence && (
+          <span className="text-red-600 font-medium text-sm">
+            Error: {state.error}
+          </span>
+        )}
+        {!state.isProcessingSequence &&
+          !state.isSuccess &&
+          !state.error &&
+          state.chapters.length > 0 && (
+            <span className="text-muted-foreground font-medium text-sm">
+              Ready to upload {state.chapters.length} chapter(s).
+            </span>
+          )}
+        {!state.isProcessingSequence &&
+          state.chapters.length === 0 &&
+          !state.isSuccess && (
+            <span className="text-muted-foreground font-medium text-sm">
+              Add or upload chapters to begin.
+            </span>
+          )}
       </div>
-
-      <form onSubmit={handleMultipleChaptersSubmit} className="space-y-6 mt-4">
+      {/* Add margin-top to form to prevent overlap with status indicator */}
+      <div className="space-y-6 mt-16">
+        {uploadSection}
         <div className="space-y-4">
-          {/* Upload Section */}
-          <UploadSection
-            onFileUpload={handleFileChange}
-            disabled={isProcessingSequence}
+          {chaptersList}
+
+          <ActionButtons
+            addNew={addNewChapter}
+            onCancel={cancelUpload}
+            onPost={handleMultipleChaptersSubmit}
+            progress={state.progress}
+            posting={state.isProcessingSequence}
+            hasChapters={state.chapters.length > 0}
           />
-
-          {/* Chapters List */}
-          <ChaptersList
-            chapters={chapters}
-            loadingId={loadingId}
-            onRemove={removeChapter}
-            onUpdate={updateChapter}
-            disabled={isProcessingSequence}
-          />
-
-          {/* Add New Chapter Button */}
-          <div className="flex items-center gap-2 fixed bottom-0 left-1/2 transform -translate-x-1/2  w-screen justify-center bg-black/20 p-4 backdrop-blur-sm">
-            <Button
-              type="button"
-              onClick={() => addNewChapter()}
-              disabled={isProcessingSequence}
-              variant="outline"
-            >
-              <Plus className="h-4 w-4 mr-1" /> New Chapter
-            </Button>
-            <Button
-              type="submit"
-              className="w-full md:w-auto"
-              disabled={isProcessingSequence || chapters.length === 0}
-            >
-              Upload and Process
-            </Button>
-          </div>
-        </div>
-      </form>
-    </Card>
-  );
-}
-
-// Sub-components
-function UploadSection({
-  onFileUpload,
-  disabled,
-}: {
-  onFileUpload: () => void;
-  disabled: boolean;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor="file-upload">Upload Chapters</Label>
-      <div
-        className={`border-2 border-dashed rounded-lg p-8 text-center border-border ${
-          disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
-        }`}
-      >
-        <div
-          className="flex flex-col items-center justify-center space-y-2"
-          onClick={disabled ? undefined : onFileUpload}
-        >
-          <Upload className="h-10 w-10" />
-          <span className="text-sm font-medium">
-            {disabled
-              ? "Uploading in progress..."
-              : "Click to upload or drag and drop"}
-          </span>
-          <span className="text-xs">
-            ZIP file for multiple chapters or single file for one chapter
-          </span>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ChaptersList({
-  chapters,
-  loadingId,
-  onRemove,
-  onUpdate,
-  disabled,
-}: {
-  chapters: ChapterData[];
-  loadingId: string | null;
-  onRemove: (id: string) => void;
-  onUpdate: (id: string, field: keyof ChapterData, value: unknown) => void;
-  disabled: boolean;
-}) {
-  if (chapters.length === 0) return null;
-
-  return (
-    <div className="space-y-4">
-      {chapters.map((chapter) => (
-        <ChapterCard
-          key={chapter.id}
-          chapter={chapter}
-          isLoading={loadingId === chapter.id}
-          onRemove={onRemove}
-          onUpdate={onUpdate}
-          disabled={disabled}
-        />
-      ))}
-    </div>
-  );
-}
-
-function ChapterCard({
-  chapter,
-  isLoading,
-  onRemove,
-  onUpdate,
-  disabled,
-}: {
-  chapter: ChapterData;
-  isLoading: boolean;
-  onRemove: (id: string) => void;
-  onUpdate: (id: string, field: keyof ChapterData, value: unknown) => void;
-  disabled: boolean;
-}) {
-  return (
-    <div className="p-4 rounded-lg">
-      <Card className={disabled && !isLoading ? "opacity-70" : ""}>
-        <CardHeader>
-          <CardTitle>
-            {chapter.chapterTitle || "Untitled Chapter"}
-            {isLoading && (
-              <span className="ml-2 text-xs font-normal text-blue-500">
-                Uploading...
-              </span>
-            )}
-          </CardTitle>
-          <Button
-            type="button"
-            variant="destructive"
-            className="absolute right-4 top-1/2 -translate-y-1/2"
-            onClick={() => onRemove(chapter.id)}
-            disabled={disabled}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </CardHeader>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4">
-          <div className="space-y-2">
-            <Label htmlFor={`chapterNumber-${chapter.id}`}>
-              Chapter Number
-            </Label>
-            <Input
-              id={`chapterNumber-${chapter.id}`}
-              type="number"
-              value={chapter.chapterNumber}
-              onChange={(e) =>
-                onUpdate(chapter.id, "chapterNumber", e.target.value)
-              }
-              placeholder="e.g., 1"
-              disabled={disabled}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor={`chapterTitle-${chapter.id}`}>Chapter Title</Label>
-            <Input
-              id={`chapterTitle-${chapter.id}`}
-              value={chapter.chapterTitle}
-              onChange={(e) =>
-                onUpdate(chapter.id, "chapterTitle", e.target.value)
-              }
-              placeholder="Enter chapter title"
-              disabled={disabled}
-            />
-          </div>
-        </div>
-
-        <CardContent className="flex flex-col flex-1">
-          <Accordion type="single" collapsible>
-            <AccordionItem value="chapter-content">
-              <AccordionTrigger disabled={disabled}>
-                Chapter Content
-              </AccordionTrigger>
-              <AccordionContent>
-                <Editor
-                  content={chapter.content}
-                  onChange={(value) => onUpdate(chapter.id, "content", value)}
-                  editorClassName="min-h-44 overflow-clip"
-                  disabled={disabled}
-                />
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-        </CardContent>
-
-        <CardHeader>
-          <Toggle
-            pressed={chapter.postOnOtherWebsite}
-            onPressedChange={() =>
-              onUpdate(
-                chapter.id,
-                "postOnOtherWebsite",
-                !chapter.postOnOtherWebsite
-              )
-            }
-            disabled={disabled}
-          >
-            <Layers2 className="mr-2 h-4 w-4" />
-            Post on the other website
-          </Toggle>
-        </CardHeader>
-      </Card>
-    </div>
+    </Card>
   );
 }

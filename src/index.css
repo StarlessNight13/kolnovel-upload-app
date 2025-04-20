@@ -255,3 +255,44 @@ body {
 .tiptap {
   flex: 1;
 }
+
+/* Target the entire scrollbar */
+::-webkit-scrollbar {
+  width: 10px; /* For vertical scrollbars */
+  height: 10px; /* For horizontal scrollbars */
+}
+
+/* Target the track (the background of the scrollbar) */
+::-webkit-scrollbar-track {
+  /* @apply bg-crp-mantle; */
+  background-color: var(--ctp-mantle);
+  border-radius: 5px; /* Optional: round the corners of the track */
+}
+
+/* Target the thumb (the draggable part of the scrollbar) */
+::-webkit-scrollbar-thumb {
+  background-color: var(--primary);
+  border-radius: 5px; /* Round the corners of the thumb */
+  border: 2px solid transparent; /* Add some spacing around the thumb */
+  background-clip: padding-box; /* Make the border not overlap the padding */
+}
+
+/* Hover effect on the thumb */
+::-webkit-scrollbar-thumb:hover {
+  background-color: #555;
+}
+
+/* Target the corners where horizontal and vertical scrollbars meet */
+::-webkit-scrollbar-corner {
+  background-color: #ccc;
+}
+
+/* Optionally, style the scrollbar buttons (arrows) */
+::-webkit-scrollbar-button {
+  /* Styles for the buttons */
+}
+
+/* Style the resizer element (if the element is resizable) */
+::-webkit-resizer {
+  /* Styles for the resizer */
+}
