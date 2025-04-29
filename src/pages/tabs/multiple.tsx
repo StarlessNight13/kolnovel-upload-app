@@ -276,25 +276,50 @@ export default function MultipleTab({ novel, volume }: MultipleTabProps) {
     }
   }, []); // dispatch is stable
 
+  function extractTextFromAllElements(htmlString: string): string[] {
+    const textContent: string[] = [];
+    const elementRegex = /<([a-zA-Z0-9]+)[^>]*>([^<]*?)<\/\1>/g;
+    let match;
+
+    while ((match = elementRegex.exec(htmlString)) !== null) {
+      const innerText = match[2].trim(); // The text content within the tags
+
+      if (innerText) {
+        textContent.push(innerText);
+      }
+    }
+
+    return textContent;
+  }
+
   const handleMultipleChaptersSubmit = useCallback(async () => {
-    if (state.isProcessingSequence || state.chapters.length === 0) {
-      console.log("Processing already in progress or no chapters to process.");
+    if (!novel || novel === "") {
+      toast.error("Please select a novel.");
       return;
     }
-    if (!novel || novel === "") return;
+    if (state.isProcessingSequence || state.chapters.length === 0) {
+      toast.info("Processing already in progress or no chapters to process.");
+      return;
+    }
 
-    console.log("Starting chapter processing sequence...");
+    toast.info("Starting chapter processing sequence...");
+
 
     abortControllerRef.current = new AbortController();
     const signal = abortControllerRef.current.signal;
     dispatch({ type: "START_PROCESSING" });
 
     // Create a snapshot of chapters to process at this moment
-    const chaptersToProcess = state.chapters.map((ch) => ({
-      ...ch,
-      novel, // Add novel/volume context here
-      volume,
-    }));
+    const chaptersToProcess = state.chapters.map((ch) => {
+      const paragraphs = extractTextFromAllElements(ch.content);
+      const contentString = paragraphs.join("\n\n");
+      return {
+        ...ch,
+        content: contentString,
+        novel, // Add novel/volume context here
+        volume,
+      };
+    });
 
     let processingError: string | null = null;
 
@@ -302,7 +327,7 @@ export default function MultipleTab({ novel, volume }: MultipleTabProps) {
       const chaptersNumber = chaptersToProcess.length;
       for (const chapter of chaptersToProcess) {
         if (signal.aborted) {
-          console.log("Upload aborted by user, breaking loop.");
+          toast.error("Upload aborted by user, breaking loop.");
           processingError = "Cancelled by user";
           break; // Exit the loop
         }
@@ -317,7 +342,7 @@ export default function MultipleTab({ novel, volume }: MultipleTabProps) {
 
           if (signal.aborted) {
             // Check again *after* await, in case cancelled during wait
-            console.log("Upload aborted during chapter post, breaking loop.");
+            toast.error("Upload aborted during chapter post, breaking loop.");
             processingError = "Cancelled by user";
             break;
           }

@@ -98,13 +98,35 @@ export default function SingleTab({
       chapterTitle: "",
     },
   });
+  function extractTextFromAllElements(htmlString: string): string[] {
+    const textContent: string[] = [];
+    const elementRegex = /<([a-zA-Z0-9]+)[^>]*>([^<]*?)<\/\1>/g;
+    let match;
+
+    while ((match = elementRegex.exec(htmlString)) !== null) {
+      const innerText = match[2].trim(); // The text content within the tags
+
+      if (innerText) {
+        textContent.push(innerText);
+      }
+    }
+
+    return textContent;
+  }
 
   async function onSubmit(values: z.infer<typeof chapterSchema>) {
+    if (novel === null || novel === "") {
+      toast.error("Please select a novel.");
+      return;
+    }
+
     const [cat, series] = getTwoNumbersFromString(novel);
 
     setIsLoading(true);
     toast.loading("Posting chapter...");
 
+    const paragraphs = extractTextFromAllElements(values.content);
+    const contentString = paragraphs.join("\n\n");
     try {
       const res = await window.ipcRenderer.invoke("post-chapter", {
         id: crypto.randomUUID(),
@@ -114,7 +136,7 @@ export default function SingleTab({
         cat,
         chapterNumber: values.chapterNumber,
         chapterTitle: values.chapterTitle,
-        content: values.content,
+        content: contentString,
         postOnOtherWebsite: values.postOnOtherWebsite,
       });
 

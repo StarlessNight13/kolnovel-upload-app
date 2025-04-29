@@ -412,7 +412,7 @@ function createPostFormData({ title, content, ero_chapter, ero_series, cat, ero_
     formData.append('hhg', hours);
     formData.append('description', content);
     formData.append('post_other', postOnOtherWebsite ? 'on' : 'off');
-    formData.append('checkbox_value', 'yes');
+    formData.append('checkbox_value', postOnOtherWebsite ? 'yes' : 'no');
     formData.append('schedule_value', 'no');
     formData.append('schedule_date', date);
     formData.append('schedule_time_mn', minutes);
