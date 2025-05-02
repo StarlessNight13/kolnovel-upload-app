@@ -286,13 +286,3 @@ body {
 ::-webkit-scrollbar-corner {
   background-color: #ccc;
 }
-
-/* Optionally, style the scrollbar buttons (arrows) */
-::-webkit-scrollbar-button {
-  /* Styles for the buttons */
-}
-
-/* Style the resizer element (if the element is resizable) */
-::-webkit-resizer {
-  /* Styles for the resizer */
-}

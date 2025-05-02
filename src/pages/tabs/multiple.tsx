@@ -3,6 +3,9 @@ import { useCallback, useMemo, useReducer, useRef } from "react";
 
 import ActionButtons from "@/components/mutli/action";
 import ChaptersList from "@/components/mutli/chapter-list";
+import chapterReducer, {
+  initialState,
+} from "@/components/mutli/chapterReducer";
 import UploadSection from "@/components/mutli/uploadSection";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -24,118 +27,27 @@ interface FileData {
   content: string; // Assuming HTML string
 }
 
+type NovelData = {
+  cat: string;
+  series: string;
+  text: string;
+};
+
 interface MultipleTabProps {
-  novel: string;
+  novel: NovelData | null;
   volume: string;
 }
 
-// --- State Management (useReducer) ---
-
-interface ComponentState {
-  chapters: ChapterData[];
-  loadingId: string | null;
-  isProcessingSequence: boolean;
-  isSuccess: boolean;
-  error: string | null; // Add error state for better feedback
-  progress: number;
-}
-
-type Action =
-  | { type: "ADD_CHAPTER"; payload: ChapterData }
-  | { type: "ADD_MULTIPLE_CHAPTERS"; payload: ChapterData[] }
-  | { type: "REMOVE_CHAPTER"; payload: string } // id
-  | {
-      type: "UPDATE_CHAPTER";
-      payload: { id: string; field: keyof ChapterData; value: unknown };
-    }
-  | { type: "START_PROCESSING" }
-  | { type: "SET_LOADING_ID"; payload: string | null }
-  | { type: "FINISH_PROCESSING"; payload: { success: boolean; error?: string } }
-  | { type: "RESET_STATE" } // Optional: for complete reset
-  | { type: "UPDATE_PROGRESS"; payload: number };
-
-const initialState: ComponentState = {
-  chapters: [],
-  loadingId: null,
-  isProcessingSequence: false,
-  isSuccess: false,
-  error: null,
-  progress: 0,
+type chapterPostData = {
+  id: string;
+  volume: string;
+  series: string;
+  cat: string;
+  chapterNumber: string;
+  chapterTitle: string;
+  content: string;
+  postOnOtherWebsite: boolean;
 };
-
-function chapterReducer(state: ComponentState, action: Action): ComponentState {
-  switch (action.type) {
-    case "ADD_CHAPTER":
-      // Prevent adding if processing
-      if (state.isProcessingSequence) return state;
-      return {
-        ...state,
-        chapters: [...state.chapters, action.payload],
-        isSuccess: false, // Reset success state on modification
-        error: null,
-      };
-    case "ADD_MULTIPLE_CHAPTERS":
-      if (state.isProcessingSequence) return state;
-      return {
-        ...state,
-        chapters: [...state.chapters, ...action.payload],
-        isSuccess: false, // Reset success state on modification
-        error: null,
-      };
-    case "REMOVE_CHAPTER":
-      // Note: This allows removing chapters even during processing in the UI,
-      // but they might still be processed if already sent. Consider disabling removal during processing.
-      return {
-        ...state,
-        chapters: state.chapters.filter((ch) => ch.id !== action.payload),
-        isSuccess: state.chapters.length - 1 === 0 && state.isSuccess, // Maintain success if last chapter removed was the one making it successful
-        error: null,
-      };
-    case "UPDATE_CHAPTER":
-      // Prevent updates during processing
-      if (state.isProcessingSequence) return state;
-      return {
-        ...state,
-        chapters: state.chapters.map((chapter) =>
-          chapter.id === action.payload.id
-            ? { ...chapter, [action.payload.field]: action.payload.value }
-            : chapter
-        ),
-        isSuccess: false, // Reset success state on modification
-        error: null,
-      };
-    case "START_PROCESSING":
-      return {
-        ...state,
-        isProcessingSequence: true,
-        loadingId: null,
-        isSuccess: false,
-        error: null,
-      };
-    case "SET_LOADING_ID":
-      return {
-        ...state,
-        loadingId: action.payload,
-      };
-    case "FINISH_PROCESSING":
-      return {
-        ...state,
-        isProcessingSequence: false,
-        loadingId: null,
-        isSuccess: action.payload.success && !action.payload.error, // Only success if no error occurred overall
-        error: action.payload.error || null,
-      };
-    case "RESET_STATE":
-      return initialState;
-    case "UPDATE_PROGRESS":
-      return {
-        ...state,
-        progress: action.payload,
-      };
-    default:
-      return state;
-  }
-}
 
 // --- Utility Function ---
 /**
@@ -189,6 +101,7 @@ export default function MultipleTab({ novel, volume }: MultipleTabProps) {
         postOnOtherWebsite: chapterData?.postOnOtherWebsite ?? true,
       };
       dispatch({ type: "ADD_CHAPTER", payload: newChapter });
+      console.log("🚀 ~ MultipleTab ~ newChapter:", newChapter);
     },
     [] // dispatch is stable
   );
@@ -276,24 +189,8 @@ export default function MultipleTab({ novel, volume }: MultipleTabProps) {
     }
   }, []); // dispatch is stable
 
-  function extractTextFromAllElements(htmlString: string): string[] {
-    const textContent: string[] = [];
-    const elementRegex = /<([a-zA-Z0-9]+)[^>]*>([^<]*?)<\/\1>/g;
-    let match;
-
-    while ((match = elementRegex.exec(htmlString)) !== null) {
-      const innerText = match[2].trim(); // The text content within the tags
-
-      if (innerText) {
-        textContent.push(innerText);
-      }
-    }
-
-    return textContent;
-  }
-
   const handleMultipleChaptersSubmit = useCallback(async () => {
-    if (!novel || novel === "") {
+    if (!novel) {
       toast.error("Please select a novel.");
       return;
     }
@@ -304,19 +201,17 @@ export default function MultipleTab({ novel, volume }: MultipleTabProps) {
 
     toast.info("Starting chapter processing sequence...");
 
-
     abortControllerRef.current = new AbortController();
     const signal = abortControllerRef.current.signal;
     dispatch({ type: "START_PROCESSING" });
 
     // Create a snapshot of chapters to process at this moment
-    const chaptersToProcess = state.chapters.map((ch) => {
-      const paragraphs = extractTextFromAllElements(ch.content);
-      const contentString = paragraphs.join("\n\n");
+    const chaptersToProcess: chapterPostData[] = state.chapters.map((ch) => {
       return {
         ...ch,
-        content: contentString,
-        novel, // Add novel/volume context here
+        content: ch.content,
+        cat: novel.cat,
+        series: novel.series,
         volume,
       };
     });

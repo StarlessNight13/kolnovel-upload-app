@@ -1,13 +1,12 @@
 import Editor from "@/components/Tiptap"; // Assuming Tiptap is correctly memoized or pure
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@radix-ui/react-accordion";
 import { Layers2, X } from "lucide-react";
 import { motion } from "motion/react";
 import React, { useCallback } from "react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "../animate-ui/radix/collapsible";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Input } from "../ui/input";
@@ -133,28 +132,27 @@ const ChapterCard = React.memo(
           </div>
 
           {/* Content Editor Section */}
-          <CardContent className="p-0">
+          <CardContent className="flex flex-col flex-1 p-0">
             {" "}
-            {/* Remove default padding */}
-            <Accordion type="single" collapsible className="w-full">
-              <AccordionItem value="chapter-content" className="border-none">
-                <AccordionTrigger
-                  className="text-sm font-medium px-4 py-2 hover:no-underline [&[data-state=open]>svg]:rotate-180" // Custom styles
+            <Collapsible>
+              <CollapsibleTrigger asChild>
+                <Button
+                  variant="outline"
+                  className=" mx-4"
                   disabled={disabled}
                 >
                   Chapter Content Editor
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4">
-                  {/* Assuming Editor component is memoized or handles updates efficiently */}
-                  <Editor
-                    content={chapter.content}
-                    onChange={handleContentChange} // Use specific handler
-                    disabled={disabled}
-                    // Pass aria labels if the Editor supports them
-                  />
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <Editor
+                  content={chapter.content}
+                  onChange={handleContentChange} // Use specific handler
+                  disabled={disabled}
+                  // Pass aria labels if the Editor supports them
+                />
+              </CollapsibleContent>
+            </Collapsible>
           </CardContent>
 
           {/* Options/Footer Section */}

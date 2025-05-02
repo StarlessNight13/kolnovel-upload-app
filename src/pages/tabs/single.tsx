@@ -1,5 +1,3 @@
-import { useState } from "react";
-import { motion } from "motion/react";
 import Editor from "@/components/Tiptap";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,9 +18,11 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { motion } from "motion/react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { z } from "zod";
 import { toast } from "sonner";
+import { z } from "zod";
 
 const chapterSchema = z.object({
   chapterNumber: z.string().min(1, {
@@ -65,29 +65,31 @@ const buttonVariants = {
   tap: { scale: 0.98 },
 };
 
+type NovelData = {
+  cat: string;
+  series: string;
+  text: string;
+};
+
+type chapterPostData = {
+  id: string;
+  volume: string;
+  series: string;
+  cat: string;
+  chapterNumber: string;
+  chapterTitle: string;
+  content: string;
+  postOnOtherWebsite: boolean;
+};
+
 export default function SingleTab({
   novel,
   volume,
 }: {
-  novel: string;
+  novel: NovelData | null;
   volume: string;
 }) {
   const [isLoading, setIsLoading] = useState(false);
-
-  function getTwoNumbersFromString(
-    inputValue: string
-  ): [string | null, string | null] {
-    const parts = inputValue.split("-");
-    if (parts.length === 2) {
-      const num1 = parts[0];
-      const num2 = parts[1];
-      return [
-        isNaN(Number(num1)) ? null : num1,
-        isNaN(Number(num2)) ? null : num2,
-      ];
-    }
-    return [null, null];
-  }
 
   const form = useForm<z.infer<typeof chapterSchema>>({
     resolver: zodResolver(chapterSchema),
@@ -115,30 +117,30 @@ export default function SingleTab({
   }
 
   async function onSubmit(values: z.infer<typeof chapterSchema>) {
-    if (novel === null || novel === "") {
+    if (novel === null) {
       toast.error("Please select a novel.");
       return;
     }
 
-    const [cat, series] = getTwoNumbersFromString(novel);
+    const { cat, series } = novel;
 
     setIsLoading(true);
     toast.loading("Posting chapter...");
 
     const paragraphs = extractTextFromAllElements(values.content);
     const contentString = paragraphs.join("\n\n");
+    const chapterData: chapterPostData = {
+      id: crypto.randomUUID(),
+      volume,
+      series,
+      cat,
+      chapterNumber: values.chapterNumber,
+      chapterTitle: values.chapterTitle,
+      content: contentString,
+      postOnOtherWebsite: values.postOnOtherWebsite,
+    };
     try {
-      const res = await window.ipcRenderer.invoke("post-chapter", {
-        id: crypto.randomUUID(),
-        novel,
-        volume,
-        series,
-        cat,
-        chapterNumber: values.chapterNumber,
-        chapterTitle: values.chapterTitle,
-        content: contentString,
-        postOnOtherWebsite: values.postOnOtherWebsite,
-      });
+      const res = await window.ipcRenderer.invoke("post-chapter", chapterData);
 
       if (res) {
         toast.success("Chapter posted successfully!");

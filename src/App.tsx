@@ -1,8 +1,7 @@
 import { LoaderCircleIcon } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ThemeProvider } from "./components/theme-provider";
 import ChapterPostPage from "./pages/upload-page";
-import VersionModal from "./components/version-modal";
 
 function App() {
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null); // Initialize to null
@@ -26,18 +25,15 @@ function App() {
 
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      <>
-        <VersionModal />
-        {loggedIn ? (
-          <ChapterPostPage />
-        ) : loggedIn === null ? (
-          <div className="min-h-screen min-w-screen flex flex-col items-center justify-center">
-            <LoaderCircleIcon className="animate-spin" />
-          </div>
-        ) : (
-          <LoginPlaceholder />
-        )}
-      </>
+      {loggedIn ? (
+        <ChapterPostPage />
+      ) : loggedIn === null ? (
+        <div className="min-h-screen min-w-screen flex flex-col items-center justify-center">
+          <LoaderCircleIcon className="animate-spin" />
+        </div>
+      ) : (
+        <LoginPlaceholder />
+      )}
     </ThemeProvider>
   );
 }

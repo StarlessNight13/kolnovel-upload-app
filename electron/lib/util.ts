@@ -19,10 +19,12 @@ type FetchResult<T> = {
     error: Error
 }
 
-type Novel = {
-    value: string;
+
+type NovelData = {
+    cat: string;
+    series: string;
     text: string;
-};
+}
 
 type Volume = {
     value: string;
@@ -177,7 +179,6 @@ async function login(email: string, password: string): Promise<{
     cookies: null;
 }> {
     const formData = createLoginFormFormData(email, password);
-    console.log("🚀 ~ login ~ formData:", formData)
     const res = await fetch(URLS.LOGIN, {
         method: "POST",
         body: formData,
@@ -237,70 +238,54 @@ function createLoginFormFormData(email: string, password: string, rememberMe = '
     return formData;
 }
 
+
 /**
- * Finds and sorts matching options from two select elements using their children
- * Each child element is expected to have a 'value' attribute and text content
+ * Finds pairs of elements from two arrays that share the same 'text' property.
+ * For each matching pair, creates an object containing the values from both elements
+ * and their common text.
+ *
+ * @param {Array<HTMLOptionElement>} array1 - The first array of elements to compare.
+ * @param {Array<HTMLOptionElement>} array2 - The second array of elements to compare.
+ * @returns {Array<NovelData>} An array of objects, where each object represents a match
+ * and has the structure { value1: any, value2: any, text: string }.
+ * Returns an empty array if no matches are found or if inputs are invalid.
  */
-function findAndSortMatching(
-    select1: HTMLElement,
-    select2: HTMLElement
-): { value: string; text: string }[] {
+function findMatchingElementsByText(array1: Array<HTMLOptionElement>, array2: Array<HTMLOptionElement>): Array<NovelData> {
+    // Initialize an empty array to store the results
+    const results: NovelData[] = [];
 
-    if (!select1 || !select2) {
-        console.error("One or both select elements not found.");
-        return [];
-    }
-
-    const matchingOptionsMap = new Map<string, { values: Set<string>; text: string }>();
-
-    // Process children of first select
-    const children1 = select1.querySelectorAll('option');
-    for (const child of children1) {
-        const textContent = child.textContent;
-        const textLower = textContent?.toLowerCase();
-        if (textLower && !matchingOptionsMap.has(textLower)) {
-            matchingOptionsMap.set(textLower, {
-                values: new Set<string>(),
-                text: textContent ?? "unknown"
-            });
-        }
-        const value = child.getAttribute('value');
-        if (value && textLower) {
-            matchingOptionsMap.get(textLower)!.values.add(value);
-        }
-    }
-
-    const finalMatchingOptions: { value: string; text: string }[] = [];
-
-    // Process children of second select
-    const children2 = select2.querySelectorAll('option');
-    for (const child of children2) {
-        const textContent = child.textContent;
-        const textLower = textContent?.toLowerCase();
-        if (textLower && matchingOptionsMap.has(textLower)) {
-            const existingEntry = matchingOptionsMap.get(textLower)!;
-            const value = child.getAttribute('value');
-            if (value) {
-                existingEntry.values.add(value);
+    // Iterate through the first array using for...of
+    for (const el1 of array1) {
+        // Check if the element is valid and has the required properties
+        // Iterate through the second array using for...of to find a match
+        for (const el2 of array2) {
+            // Check if the second element is valid, has required properties, and if texts match
+            if (el1.text === el2.text) {
+                const cat = el1.getAttribute('value');
+                const series = el2.getAttribute('value');
+                if (!cat || !series) continue;
+                // If a match is found, create the result object
+                results.push({
+                    cat: cat, // Value from the first array's element
+                    series: series, // Value from the second array's element
+                    text: el1.text      // The common text
+                });
+                break;
             }
-            finalMatchingOptions.push({
-                value: Array.from(existingEntry.values).sort().join('-'),
-                text: existingEntry.text,
-            });
-            matchingOptionsMap.delete(textLower); // Prevent processing the same text again
         }
+
     }
 
-    // Sort the final matching options by their text content alphabetically
-    finalMatchingOptions.sort((a, b) => a.text.localeCompare(b.text));
-
-    return finalMatchingOptions;
+    // Return the array of matched objects
+    return results;
 }
+
+
 
 /**
  * Fetches all available novels
  */
-async function fetchNovels(): Promise<Novel[] | null> {
+async function fetchNovels(): Promise<NovelData[] | null> {
     const result = await safeFetch(
         URLS.POST,
         { method: "GET" },
@@ -313,16 +298,18 @@ async function fetchNovels(): Promise<Novel[] | null> {
     }
 
     const doc = parse(result.data);
-    const novelCategory = doc.querySelector('#cat') as HTMLElement | null;
-    const novelSeries = doc.querySelector('#category') as HTMLElement | null;
+    const novelCategory = doc.querySelector('#cat') as HTMLSelectElement | null;
+    const novelSeries = doc.querySelector('#category') as HTMLSelectElement | null;
 
     if (!novelCategory || !novelSeries) {
         console.error("Novel select elements not found");
         return null;
     }
+    const novelCategoryOptions = Array.from(novelCategory.querySelectorAll('option')) as HTMLOptionElement[];
+    const novelSeriesOptions = Array.from(novelSeries.querySelectorAll('option')) as HTMLOptionElement[];
 
     // Sort novels alphabetically by text
-    return findAndSortMatching(novelCategory, novelSeries);
+    return findMatchingElementsByText(novelCategoryOptions, novelSeriesOptions);
 }
 
 /**
@@ -421,35 +408,30 @@ function createPostFormData({ title, content, ero_chapter, ero_series, cat, ero_
     return formData;
 }
 
-function getTwoNumbersFromString(inputValue: string): [string | null, string | null] {
-    const parts = inputValue.split('-');
-    if (parts.length === 2) {
-        const num1 = parts[0];
-        const num2 = parts[1];
-        return [isNaN(Number(num1)) ? null : num1, isNaN(Number(num2)) ? null : num2];
-    }
-    return [null, null];
-}
 
-async function postChapter(_: IpcMainInvokeEvent, chapterData: {
+type chapterPostData = {
+    id: string;
+    volume: string;
+    series: string;
+    cat: string;
+    chapterNumber: string;
     chapterTitle: string;
     content: string;
-    chapterNumber: string;
-    volume: string;
     postOnOtherWebsite: boolean;
-    novel: string;
-}) {
-    const [cat, series] = getTwoNumbersFromString(chapterData.novel);
+}
+
+
+
+async function postChapter(_: IpcMainInvokeEvent, chapterData: chapterPostData) {
     const formData = createPostFormData({
         title: chapterData.chapterTitle,
         content: chapterData.content,
         ero_chapter: chapterData.chapterNumber,
-        ero_series: series ?? "",
-        cat: cat ?? "",
+        ero_series: chapterData.series,
+        cat: chapterData.cat,
         ero_volume1: chapterData.volume,
         postOnOtherWebsite: chapterData.postOnOtherWebsite,
     });
-
 
     return await safeFetch(
         URLS.POST,
@@ -483,3 +465,4 @@ export {
     safeFetch,
     saveCookies
 };
+

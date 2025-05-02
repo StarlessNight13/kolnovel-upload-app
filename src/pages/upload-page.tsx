@@ -1,22 +1,16 @@
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import NovelVolumeSelector from "@/components/NovelVolumeSelector";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AnimatePresence, motion } from "framer-motion";
-import { LoaderCircleIcon, Plus } from "lucide-react";
-import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { LoaderCircleIcon } from "lucide-react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 const MultipleTab = lazy(() => import("./tabs/multiple"));
 const SingleTab = lazy(() => import("./tabs/single"));
 
 interface Novel {
-  value: string;
+  cat: string;
+  series: string;
   text: string;
 }
 
@@ -61,135 +55,13 @@ const tabContentVariants = {
   },
 };
 
-const NovelVolumeSelector = React.memo(
-  ({
-    novels,
-    volumes,
-    selectedNovel,
-    selectedVolume,
-    onNovelChange,
-    onVolumeChange,
-    isLoading,
-  }: {
-    novels: Novel[];
-    volumes: Volume[];
-    selectedNovel: string;
-    selectedVolume: string;
-    onNovelChange: (value: string) => void;
-    onVolumeChange: (value: string) => void;
-    isLoading: boolean;
-  }) => {
-    // Use ref to track if component has already animated
-    const hasAnimated = useRef(false);
-
-    // Use custom variants that only animate on first render
-    const containerVariants = {
-      initial: hasAnimated.current
-        ? { opacity: 1, y: 0 }
-        : { opacity: 0, y: 20 },
-      animate: {
-        opacity: 1,
-        y: 0,
-        transition: { duration: 0.5 },
-      },
-    };
-
-    // After the component mounts, mark it as animated
-    useEffect(() => {
-      hasAnimated.current = true;
-    }, []);
-
-    return (
-      <motion.div
-        key="novel-volume-selector"
-        className="flex flex-col gap-5 pb-5"
-        initial="initial"
-        animate="animate"
-        variants={containerVariants}
-      >
-        <div className="space-y-2">
-          <Label htmlFor="novel">Novel Selection</Label>
-          <Select
-            value={selectedNovel}
-            onValueChange={onNovelChange}
-            disabled={novels.length === 0 || isLoading}
-          >
-            <SelectTrigger id="novel" className="w-full">
-              <SelectValue
-                placeholder={isLoading ? "Loading novels..." : "Select a novel"}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {novels.map((novel) => (
-                <SelectItem key={novel.value} value={novel.value}>
-                  {novel.text}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="volume">Volume Selection</Label>
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <Button type="button" size="sm" variant="outline" disabled>
-                <Plus className="h-4 w-4 mr-1" /> New Volume
-              </Button>
-            </motion.div>
-          </div>
-          <Select
-            value={selectedVolume}
-            onValueChange={onVolumeChange}
-            disabled={!selectedNovel || volumes.length === 0 || isLoading}
-          >
-            <SelectTrigger id="volume" className="w-full">
-              <SelectValue
-                placeholder={
-                  !selectedNovel
-                    ? "Select a novel first"
-                    : isLoading
-                    ? "Loading volumes..."
-                    : "Select a volume"
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {selectedNovel &&
-                volumes.map((volume) => (
-                  <SelectItem key={volume.value} value={volume.value}>
-                    {volume.label}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </motion.div>
-    );
-  },
-  // Custom comparison function for memo to prevent unnecessary re-renders
-  (prevProps, nextProps) => {
-    return (
-      prevProps.selectedNovel === nextProps.selectedNovel &&
-      prevProps.selectedVolume === nextProps.selectedVolume &&
-      prevProps.isLoading === nextProps.isLoading &&
-      prevProps.novels.length === nextProps.novels.length &&
-      prevProps.volumes.length === nextProps.volumes.length
-    );
-  }
-);
-
-// Give the component a display name for better debugging
-NovelVolumeSelector.displayName = "NovelVolumeSelector";
-
 export default function ChapterPostPage() {
   const [novels, setNovels] = useState<Novel[]>([]);
-  const [volumes, setVolumes] = useState<Volume[]>([]);
-  const [novel, setNovel] = useState("");
+  const [volumes, setVolumes] = useState<Volume[] | null>(null);
+  const [novel, setNovel] = useState<Novel | null>(null);
   const [volume, setVolume] = useState("");
   const [activeTab, setActiveTab] = useState("single");
   const [isLoading, setIsLoading] = useState(true);
-
   // Use ref to track initial render state
   const isFirstRender = useRef(true);
 
@@ -210,10 +82,20 @@ export default function ChapterPostPage() {
   useEffect(() => {
     if (novel && novel !== null) {
       setIsLoading(true);
+      toast.loading("Loading volumes...", {
+        dismissible: true,
+        id: "volume-loading",
+      });
       window.ipcRenderer
-        .invoke("get-novels-volumes", novel)
+        .invoke("get-novels-volumes", novel.cat)
         .then(setVolumes)
-        .finally(() => setIsLoading(false));
+        .catch(() => {
+          toast.error("Failed to load volumes.");
+        })
+        .finally(() => {
+          setIsLoading(false);
+          toast.dismiss("volume-loading");
+        });
     }
   }, [novel]);
 
@@ -233,7 +115,7 @@ export default function ChapterPostPage() {
         {/* NovelVolumeSelector moved outside of animations and properly memoized */}
         <NovelVolumeSelector
           novels={novels}
-          volumes={volumes}
+          volumes={volumes ?? []}
           selectedNovel={novel}
           selectedVolume={volume}
           onNovelChange={(value) => {

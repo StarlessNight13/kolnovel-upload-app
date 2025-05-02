@@ -24,6 +24,7 @@ interface TiptapEditorProps {
   className?: string;
   editorClassName?: string;
   disabled?: boolean;
+  getText?: (text: string) => void;
 }
 
 export default function CommentEditor({
@@ -38,7 +39,7 @@ export default function CommentEditor({
     extensions: [StarterKit, Heading],
     content,
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
+      onChange(editor.getText());
     },
     immediatelyRender: !ssr,
   });
