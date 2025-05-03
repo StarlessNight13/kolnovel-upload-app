@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Toggle } from "@/components/ui/toggle";
@@ -27,7 +25,7 @@ interface TiptapEditorProps {
   getText?: (text: string) => void;
 }
 
-export default function CommentEditor({
+export default function Tiptap({
   content,
   onChange,
   ssr,
@@ -39,7 +37,7 @@ export default function CommentEditor({
     extensions: [StarterKit, Heading],
     content,
     onUpdate: ({ editor }) => {
-      onChange(editor.getText());
+      onChange(editor.getHTML());
     },
     immediatelyRender: !ssr,
   });

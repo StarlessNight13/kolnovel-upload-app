@@ -10,7 +10,7 @@ import UploadSection from "@/components/mutli/uploadSection";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-
+import { htmlToText } from "html-to-text";
 // --- Type Definitions ---
 
 interface ChapterData {
@@ -57,7 +57,7 @@ type chapterPostData = {
  */
 function normalizeLineBreaks(htmlString: string): string {
   if (!htmlString) return ""; // Handle null/undefined input
-  const newlineParagraph = "<p>\n</p>";
+  const newlineParagraph = "<p>\n\n\n</p>";
 
   // 1. Replace all variations of <br> tags
   const brRegex = /<br\s*\/?>/gi;
@@ -101,7 +101,6 @@ export default function MultipleTab({ novel, volume }: MultipleTabProps) {
         postOnOtherWebsite: chapterData?.postOnOtherWebsite ?? true,
       };
       dispatch({ type: "ADD_CHAPTER", payload: newChapter });
-      console.log("🚀 ~ MultipleTab ~ newChapter:", newChapter);
     },
     [] // dispatch is stable
   );
@@ -132,10 +131,9 @@ export default function MultipleTab({ novel, volume }: MultipleTabProps) {
         const chapterNumber = /^\d+$/.test(potentialNumber)
           ? potentialNumber
           : "";
-
         return {
           id: crypto.randomUUID(),
-          content: normalizeLineBreaks(file.content),
+          content: normalizeLineBreaks(file.content), // Normalize line breaks
           chapterTitle: file.name, // Consider cleaning up the extension here too if desired
           chapterNumber: chapterNumber,
           postOnOtherWebsite: true,
@@ -209,7 +207,7 @@ export default function MultipleTab({ novel, volume }: MultipleTabProps) {
     const chaptersToProcess: chapterPostData[] = state.chapters.map((ch) => {
       return {
         ...ch,
-        content: ch.content,
+        content: htmlToText(ch.content),
         cat: novel.cat,
         series: novel.series,
         volume,

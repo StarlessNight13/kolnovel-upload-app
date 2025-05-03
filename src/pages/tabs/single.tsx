@@ -100,21 +100,6 @@ export default function SingleTab({
       chapterTitle: "",
     },
   });
-  function extractTextFromAllElements(htmlString: string): string[] {
-    const textContent: string[] = [];
-    const elementRegex = /<([a-zA-Z0-9]+)[^>]*>([^<]*?)<\/\1>/g;
-    let match;
-
-    while ((match = elementRegex.exec(htmlString)) !== null) {
-      const innerText = match[2].trim(); // The text content within the tags
-
-      if (innerText) {
-        textContent.push(innerText);
-      }
-    }
-
-    return textContent;
-  }
 
   async function onSubmit(values: z.infer<typeof chapterSchema>) {
     if (novel === null) {
@@ -127,8 +112,6 @@ export default function SingleTab({
     setIsLoading(true);
     toast.loading("Posting chapter...");
 
-    const paragraphs = extractTextFromAllElements(values.content);
-    const contentString = paragraphs.join("\n\n");
     const chapterData: chapterPostData = {
       id: crypto.randomUUID(),
       volume,
@@ -136,7 +119,7 @@ export default function SingleTab({
       cat,
       chapterNumber: values.chapterNumber,
       chapterTitle: values.chapterTitle,
-      content: contentString,
+      content: values.content,
       postOnOtherWebsite: values.postOnOtherWebsite,
     };
     try {
