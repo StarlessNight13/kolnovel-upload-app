@@ -23,6 +23,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import { htmlToText } from "html-to-text";
 
 const chapterSchema = z.object({
   chapterNumber: z.string().min(1, {
@@ -119,7 +120,7 @@ export default function SingleTab({
       cat,
       chapterNumber: values.chapterNumber,
       chapterTitle: values.chapterTitle,
-      content: values.content,
+      content: htmlToText(values.content),
       postOnOtherWebsite: values.postOnOtherWebsite,
     };
     try {
