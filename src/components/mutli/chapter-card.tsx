@@ -9,6 +9,7 @@ import {
 } from "../animate-ui/radix/collapsible";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { DatePicker } from "../ui/date-picker";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Toggle } from "../ui/toggle";
@@ -19,6 +20,7 @@ interface ChapterData {
   chapterNumber: string; // Keep as string if input allows non-numeric initially
   chapterTitle: string;
   postOnOtherWebsite: boolean;
+  scheduledDate: Date | undefined;
 }
 
 // Memoize ChapterCard as its props might change, but maybe not always when parent re-renders
@@ -131,16 +133,31 @@ const ChapterCard = React.memo(
             </div>
           </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 px-4 pb-3 border-b">
+            <div className="space-y-1">
+              <Label
+                htmlFor={`chapterNumber-${chapter.id}`}
+                className="text-xs"
+              >
+                Chapter Schedual Date
+              </Label>
+              <div className="flex flex-row items-center gap-2">
+                <DatePicker
+                  date={chapter.scheduledDate}
+                  setDate={(date) =>
+                    onUpdate(chapter.id, "scheduledDate", date)
+                  }
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Content Editor Section */}
           <CardContent className="flex flex-col flex-1 p-0">
             {" "}
             <Collapsible>
               <CollapsibleTrigger asChild>
-                <Button
-                  variant="outline"
-                  className=" mx-4"
-                  disabled={disabled}
-                >
+                <Button variant="outline" className=" mx-4" disabled={disabled}>
                   Chapter Content Editor
                 </Button>
               </CollapsibleTrigger>

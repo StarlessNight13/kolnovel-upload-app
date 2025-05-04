@@ -2,7 +2,7 @@ import { app, IpcMainInvokeEvent } from 'electron';
 import fs from 'fs/promises';
 import { parse } from 'node-html-parser';
 import path from 'node:path';
-
+import { sendMessageToMainWindow } from '../main';
 // Types
 type DateTimeFormat = {
     date: string;
@@ -55,7 +55,38 @@ const COOKIES_FILE_PATH = path.join(cacheDir, 'cookies.json');
 /**
  * Returns a formatted date time object with current time information
  */
-function getFormattedDateTime(): DateTimeFormat {
+function getFormattedDateTime(date: Date): DateTimeFormat {
+
+    // Get date components
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const formattedDate = `${year}-${month}-${day}`;
+
+    // Get time components
+    const hours = date.getHours().toString();
+    const minutes = date.getMinutes().toString();
+
+    // Get UTC offset
+    const offsetMinutes = date.getTimezoneOffset();
+    const offsetHours = Math.abs(Math.floor(offsetMinutes / 60));
+    const offsetRemainderMinutes = Math.abs(offsetMinutes % 60);
+    const sign = offsetMinutes < 0 ? '+' : '-';
+    const utz = `GMT${sign}${String(offsetHours).padStart(1, '0')}${String(offsetRemainderMinutes).padStart(2, '0')}`;
+
+    return {
+        date: formattedDate,
+        hours,
+        minutes,
+        utz
+    };
+}
+
+
+/**
+ * Returns a formatted date time object with current time information
+ */
+function getCurrentDateTime(): DateTimeFormat {
     const now = new Date();
 
     // Get date components
@@ -82,6 +113,7 @@ function getFormattedDateTime(): DateTimeFormat {
         utz
     };
 }
+
 
 /**
  * Loads cookies from the file system
@@ -372,7 +404,7 @@ async function getAllCookiesForSession(session: Electron.Session): Promise<Cooki
     }
 }
 
-function createPostFormData({ title, content, ero_chapter, ero_series, cat, ero_volume1 = '', postOnOtherWebsite = false }: {
+function createPostFormData({ title, content, ero_chapter, ero_series, cat, ero_volume1 = '', postOnOtherWebsite = false, scheduledDate }: {
     title: string;
     content: string;
     ero_chapter: string;
@@ -380,8 +412,10 @@ function createPostFormData({ title, content, ero_chapter, ero_series, cat, ero_
     cat: string;
     ero_volume1?: string;
     postOnOtherWebsite?: boolean;
+    scheduledDate?: Date | undefined;
 }) {
-    const { date, hours, minutes, utz } = getFormattedDateTime();
+    const { date, hours, minutes, utz } = getCurrentDateTime();
+    const scheduledDateFormatted = scheduledDate ? getFormattedDateTime(scheduledDate) : getCurrentDateTime();
     const formData = new FormData();
     formData.append('ero_series', ero_series);
     formData.append('cat', cat);
@@ -390,9 +424,10 @@ function createPostFormData({ title, content, ero_chapter, ero_series, cat, ero_
     formData.append('ero_chapter', ero_chapter);
     formData.append('UTZ', utz);
     formData.append('title', title);
-    formData.append('date_now', date);
-    formData.append('mn', minutes);
-    formData.append('hh', hours);
+    formData.append('featers', scheduledDate ? "yes" : "no");
+    formData.append('date_now', scheduledDateFormatted.date);
+    formData.append('hh', scheduledDateFormatted.hours);
+    formData.append('mn', scheduledDateFormatted.minutes);
     formData.append('myCRED_sell_content', '0');
     formData.append('gold_date', date);
     formData.append('mng', minutes);
@@ -400,16 +435,16 @@ function createPostFormData({ title, content, ero_chapter, ero_series, cat, ero_
     formData.append('description', content);
     formData.append('post_other', postOnOtherWebsite ? 'on' : 'off');
     formData.append('checkbox_value', postOnOtherWebsite ? 'yes' : 'no');
-    formData.append('schedule_value', 'no');
-    formData.append('schedule_date', date);
-    formData.append('schedule_time_mn', minutes);
-    formData.append('schedule_time_hh', hours);
+    formData.append('schedule_value', scheduledDate ? "yes" : "no");
+    formData.append('schedule_date', scheduledDateFormatted.date);
+    formData.append('schedule_time_hh', scheduledDateFormatted.hours);
+    formData.append('schedule_time_mn', scheduledDateFormatted.minutes);
     formData.append('submit', 'نشر');
     return formData;
 }
 
 
-type chapterPostData = {
+export type chapterPostData = {
     id: string;
     volume: string;
     series: string;
@@ -418,6 +453,7 @@ type chapterPostData = {
     chapterTitle: string;
     content: string;
     postOnOtherWebsite: boolean;
+    scheduledDate: Date | undefined;
 }
 
 
@@ -431,6 +467,7 @@ async function postChapter(_: IpcMainInvokeEvent, chapterData: chapterPostData) 
         cat: chapterData.cat,
         ero_volume1: chapterData.volume,
         postOnOtherWebsite: chapterData.postOnOtherWebsite,
+        scheduledDate: chapterData.scheduledDate
     });
 
     return await safeFetch(
@@ -446,11 +483,14 @@ async function postChapter(_: IpcMainInvokeEvent, chapterData: chapterPostData) 
         const doc = parse(text);
         const announ = doc.querySelector('.bixbox .page .announ')
         if (announ) {
+            const text = announ.textContent
+            sendMessageToMainWindow(text)
             return true
         }
         return false
     });
 }
+
 
 export {
     createPostFormData,

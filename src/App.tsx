@@ -1,7 +1,7 @@
 import { LoaderCircleIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ThemeProvider } from "./components/theme-provider";
 import ChapterPostPage from "./pages/upload-page";
+import { toast } from "sonner";
 
 function App() {
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null); // Initialize to null
@@ -21,20 +21,20 @@ function App() {
 
     window.ipcRenderer.on("logged-in", handleLoggedIn);
     window.ipcRenderer.on("logged-out", handleLoggedOut); // Listen for logged-out too
+
+    window.ipcRenderer.on("sonner", (_, arg) => {
+      toast(arg.message);
+    });
   }, []);
 
-  return (
-    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      {loggedIn ? (
-        <ChapterPostPage />
-      ) : loggedIn === null ? (
-        <div className="min-h-screen min-w-screen flex flex-col items-center justify-center">
-          <LoaderCircleIcon className="animate-spin" />
-        </div>
-      ) : (
-        <LoginPlaceholder />
-      )}
-    </ThemeProvider>
+  return loggedIn ? (
+    <ChapterPostPage />
+  ) : loggedIn === null ? (
+    <div className="min-h-screen min-w-screen flex flex-col items-center justify-center">
+      <LoaderCircleIcon className="animate-spin" />
+    </div>
+  ) : (
+    <LoginPlaceholder />
   );
 }
 

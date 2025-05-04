@@ -42,7 +42,7 @@ import mammoth from 'mammoth'; // For .docx conversion
 import markdownit from 'markdown-it'; // For .md conversion
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fetchNovels, fetchVolumes, isLoggedIn, postChapter, saveCookies } from './lib/util'; // Assumed API functions
+import { chapterPostData, fetchNovels, fetchVolumes, isLoggedIn, postChapter, saveCookies } from './lib/util'; // Assumed API functions
 
 // --- Constants ---
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -374,16 +374,8 @@ ipcMain.handle(IpcChannels.GET_VOLUMES, async (_, novelId: string) => {
     throw new Error(`Failed to fetch volumes: ${error instanceof Error ? error.message : String(error)}`);
   }
 });
-type chapterPostData = {
-  id: string;
-  volume: string;
-  series: string;
-  cat: string;
-  chapterNumber: string;
-  chapterTitle: string;
-  content: string;
-  postOnOtherWebsite: boolean;
-}
+
+
 
 
 // Post Chapter
@@ -647,3 +639,9 @@ ipcMain.handle(IpcChannels.READ_CONVERT_FILE, async (_, filePaths: string[]): Pr
 ipcMain.on(IpcChannels.CONSOLE_LOG, (_, message: string) => {
   console.log('[Renderer Log]:', message);
 });
+
+export function sendMessageToMainWindow(message: string) {
+  if (mainWindow) {
+    mainWindow.webContents.send("sonner", { message });
+  }
+}

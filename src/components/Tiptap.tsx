@@ -2,7 +2,6 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
-import Heading from "@tiptap/extension-heading";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
@@ -28,18 +27,16 @@ interface TiptapEditorProps {
 export default function Tiptap({
   content,
   onChange,
-  ssr,
   className,
   editorClassName,
   disabled,
 }: TiptapEditorProps) {
   const editor = useEditor({
-    extensions: [StarterKit, Heading],
+    extensions: [StarterKit],
     content,
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML());
     },
-    immediatelyRender: !ssr,
   });
 
   if (!editor) {

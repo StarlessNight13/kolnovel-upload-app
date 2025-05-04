@@ -6,6 +6,7 @@ interface ChapterData {
   chapterNumber: string; // Keep as string if input allows non-numeric initially
   chapterTitle: string;
   postOnOtherWebsite: boolean;
+  scheduledDate: Date | undefined;
 }
 
 interface ComponentState {

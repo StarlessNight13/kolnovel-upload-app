@@ -19,6 +19,7 @@ interface ChapterData {
   chapterNumber: string; // Keep as string if input allows non-numeric initially
   chapterTitle: string;
   postOnOtherWebsite: boolean;
+  scheduledDate: Date | undefined;
 }
 
 interface FileData {
@@ -99,6 +100,7 @@ export default function MultipleTab({ novel, volume }: MultipleTabProps) {
         chapterTitle: chapterData?.chapterTitle ?? "Untitled Chapter",
         chapterNumber: chapterData?.chapterNumber ?? "", // Default to empty string, let validation handle it
         postOnOtherWebsite: chapterData?.postOnOtherWebsite ?? true,
+        scheduledDate: undefined,
       };
       dispatch({ type: "ADD_CHAPTER", payload: newChapter });
     },
@@ -137,6 +139,7 @@ export default function MultipleTab({ novel, volume }: MultipleTabProps) {
           chapterTitle: file.name, // Consider cleaning up the extension here too if desired
           chapterNumber: chapterNumber,
           postOnOtherWebsite: true,
+          scheduledDate: undefined,
         };
       };
 
@@ -214,6 +217,10 @@ export default function MultipleTab({ novel, volume }: MultipleTabProps) {
       };
     });
 
+    console.log(
+      "🚀 ~ constchaptersToProcess:chapterPostData[]=state.chapters.map ~ chaptersToProcess:",
+      chaptersToProcess
+    );
     let processingError: string | null = null;
 
     try {
